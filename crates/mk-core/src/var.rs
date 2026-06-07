@@ -130,6 +130,20 @@ impl Scope {
     }
 }
 
+// ── Scope: export ─────────────────────────────────────────────────────────
+
+impl Scope {
+    /// Export all visible variables as a flat `HashMap<String, String>`.
+    /// Useful for passing the variable scope to recipe execution.
+    pub fn export(&self) -> HashMap<String, String> {
+        let mut map = HashMap::new();
+        for (name, value) in self.iter() {
+            map.insert(name.to_string(), value.to_string());
+        }
+        map
+    }
+}
+
 // ── Scope: expansion ───────────────────────────────────────────────────────
 
 impl Scope {
@@ -569,5 +583,36 @@ mod tests {
         // Simulate env import (would set PATH if lower prec)
         s.set("PATH", "/usr/bin", Precedence::Environment);
         assert_eq!(s.get("PATH"), Some("/custom"));
+    }
+
+    #[test]
+    fn export_scope_to_hashmap() {
+        let mut s = Scope::new();
+        s.set("FOO", "bar", Precedence::Mkfile);
+        s.set("CC", "gcc", Precedence::Mkfile);
+        let map = s.export();
+        assert_eq!(map.get("FOO").map(|s| s.as_str()), Some("bar"));
+        assert_eq!(map.get("CC").map(|s| s.as_str()), Some("gcc"));
+    }
+
+    #[test]
+    fn export_includes_parent() {
+        let mut parent = Scope::new();
+        parent.set("PARENT_VAR", "p", Precedence::Mkfile);
+        let mut child = Scope::with_parent(parent);
+        child.set("CHILD_VAR", "c", Precedence::Mkfile);
+        let map = child.export();
+        assert_eq!(map.get("PARENT_VAR").map(|s| s.as_str()), Some("p"));
+        assert_eq!(map.get("CHILD_VAR").map(|s| s.as_str()), Some("c"));
+    }
+
+    #[test]
+    fn export_child_shadows_parent() {
+        let mut parent = Scope::new();
+        parent.set("FOO", "parent", Precedence::Mkfile);
+        let mut child = Scope::with_parent(parent);
+        child.set("FOO", "child", Precedence::Mkfile);
+        let map = child.export();
+        assert_eq!(map.get("FOO").map(|s| s.as_str()), Some("child"));
     }
 }

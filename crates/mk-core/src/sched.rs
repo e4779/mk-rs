@@ -272,6 +272,7 @@ mod tests {
     use crate::graph::{Graph, Node, NodeIndex, NodeFlags, build_graph};
     use crate::lex::{tokenize, ShellMode};
     use crate::parse;
+    use crate::shell::ShellResult;
     use std::path::{Path, PathBuf};
 
     // ── Test shell ─────────────────────────────────────────────────────

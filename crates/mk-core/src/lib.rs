@@ -25,3 +25,4 @@ pub mod graph;
 pub mod shell;
 pub mod recipe;
 pub mod sched;
+pub mod include;

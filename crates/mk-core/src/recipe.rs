@@ -153,8 +153,14 @@ pub fn run(
     }
 
     // ── Execute ────────────────────────────────────────────────────────
+    // Inject recipe-time variables into the environment.
+    let mut env = recipe.env.clone();
+    env.insert("target".to_string(), recipe.target.clone());
+    env.insert("prereq".to_string(), recipe.prereqs.join(" "));
+    env.insert("pid".to_string(), std::process::id().to_string());
+
     let result = shell
-        .execute(&script, &recipe.env, &recipe.working_dir)
+        .execute(&script, &env, &recipe.working_dir)
         .map_err(|e| match e {
             ShellError::CommandFailed { code, .. } => RecipeError::CommandFailed { code },
             ShellError::ShellNotFound { .. } => RecipeError::Io(std::io::Error::new(
@@ -218,6 +224,7 @@ mod tests {
         exit_code: i32,
         stdout: String,
         stderr: String,
+        last_env: std::sync::Mutex<HashMap<String, String>>,
     }
 
     impl Shell for MockShell {
@@ -228,9 +235,10 @@ mod tests {
         fn execute(
             &self,
             _recipe: &str,
-            _env: &HashMap<String, String>,
+            env: &HashMap<String, String>,
             _dir: &Path,
         ) -> Result<ShellResult, ShellError> {
+            *self.last_env.lock().unwrap() = env.clone();
             Ok(ShellResult {
                 exit_code: self.exit_code,
                 stdout: self.stdout.clone(),
@@ -312,6 +320,7 @@ mod tests {
             exit_code: 0,
             stdout: "ok\n".into(),
             stderr: String::new(),
+            last_env: std::sync::Mutex::new(HashMap::new()),
         };
         let recipe = make_recipe();
         let result = run(&recipe, &shell, &RecipeOptions::default()).unwrap();
@@ -327,6 +336,7 @@ mod tests {
             exit_code: 1,
             stdout: String::new(),
             stderr: "error".into(),
+            last_env: std::sync::Mutex::new(HashMap::new()),
         };
         let recipe = make_recipe();
         let result = run(&recipe, &shell, &RecipeOptions::default());
@@ -345,6 +355,7 @@ mod tests {
             exit_code: 0,
             stdout: "should not see this".into(),
             stderr: String::new(),
+            last_env: std::sync::Mutex::new(HashMap::new()),
         };
         let recipe = make_recipe();
         let opts = RecipeOptions {
@@ -365,6 +376,7 @@ mod tests {
             exit_code: 0,
             stdout: String::new(),
             stderr: String::new(),
+            last_env: std::sync::Mutex::new(HashMap::new()),
         };
         let mut recipe = make_recipe();
         // Use a temp-like target that won't conflict.
@@ -391,6 +403,7 @@ mod tests {
             exit_code: 0,
             stdout: String::new(),
             stderr: String::new(),
+            last_env: std::sync::Mutex::new(HashMap::new()),
         };
         let mut recipe = make_recipe();
         recipe.target = "/tmp/mk-test-touch-existing".into();
@@ -420,6 +433,7 @@ mod tests {
             exit_code: 0,
             stdout: "quiet-output".into(),
             stderr: String::new(),
+            last_env: std::sync::Mutex::new(HashMap::new()),
         };
         let mut recipe = make_recipe();
         recipe.attributes = Attributes::default().with(Attributes::QUIET);
@@ -436,6 +450,7 @@ mod tests {
             exit_code: 0,
             stdout: "silent-output".into(),
             stderr: String::new(),
+            last_env: std::sync::Mutex::new(HashMap::new()),
         };
         let recipe = make_recipe();
         let opts = RecipeOptions {
@@ -455,6 +470,7 @@ mod tests {
             exit_code: 0,
             stdout: "ok".into(),
             stderr: String::new(),
+            last_env: std::sync::Mutex::new(HashMap::new()),
         };
         let recipe = make_recipe();
         let opts = RecipeOptions {
@@ -473,6 +489,7 @@ mod tests {
             exit_code: 1,
             stdout: String::new(),
             stderr: "fail".into(),
+            last_env: std::sync::Mutex::new(HashMap::new()),
         };
         let mut recipe = make_recipe();
         recipe.target = "/tmp/mk-test-delete-target".into();
@@ -499,6 +516,7 @@ mod tests {
             exit_code: 1,
             stdout: String::new(),
             stderr: "fail".into(),
+            last_env: std::sync::Mutex::new(HashMap::new()),
         };
         let mut recipe = make_recipe();
         recipe.target = "/tmp/mk-test-delete-nonexistent".into();
@@ -539,5 +557,31 @@ mod tests {
             stderr: String::new(),
         };
         assert_eq!(a, b);
+    }
+
+    // ── Recipe-time variables test ─────────────────────────────────────
+
+    #[test]
+    fn run_injects_target_prereq_pid() {
+        let shell = MockShell {
+            exit_code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+            last_env: std::sync::Mutex::new(HashMap::new()),
+        };
+        let recipe = make_recipe();
+        run(&recipe, &shell, &RecipeOptions::default()).unwrap();
+        let env = shell.last_env.lock().unwrap();
+        assert_eq!(env.get("target").map(|s| s.as_str()), Some("hello"));
+        assert_eq!(
+            env.get("prereq").map(|s| s.as_str()),
+            Some("hello.c")
+        );
+        assert!(
+            env.get("pid")
+                .map(|s| s.parse::<u32>().is_ok())
+                .unwrap_or(false),
+            "pid should be a valid integer"
+        );
     }
 }
