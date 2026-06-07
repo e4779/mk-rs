@@ -24,3 +24,4 @@ pub mod var;
 pub mod graph;
 pub mod shell;
 pub mod recipe;
+pub mod sched;
