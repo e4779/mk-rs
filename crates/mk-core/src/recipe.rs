@@ -164,6 +164,7 @@ pub fn run(
     env.insert("newprereq".to_string(), recipe.prereqs.join(" "));
     env.insert("pid".to_string(), std::process::id().to_string());
     env.insert("alltarget".to_string(), recipe.all_targets.join(" "));
+    env.insert("newmember".to_string(), recipe.prereqs.join(" ")); // same as prereqs for now
     if let Some(ref stem) = recipe.stem {
         env.insert("stem".to_string(), stem.clone());
     }
