@@ -115,14 +115,14 @@
 | F-047 | `-t` flag (touch) | `cli`, `sched` | 1b | ✓ |
 | F-048 | `-w` flag (what-if) | `cli`, `graph` | 2 | — |
 | F-049 | `-a` flag (always make) | `cli`, `graph` | 1b | ✓ |
-| F-050 | `-d[egp]` debugging | `cli` | 3 | — |
+| F-050 | `-d[egp]` debugging | `cli` | 3 | ✓ |
 | F-051 | `-i` flag (force intermediates) | `cli`, `graph` | 1b | ✓ |
 
 ## Aggregates
 
 | ID | Feature | Module | Phase | Status |
 |----|---------|--------|-------|--------|
-| F-030 | Aggregate syntax: `lib(member)` | `archive`, `parse` | 3 | — |
+| F-030 | Aggregate syntax: `lib(member)` | `archive`, `parse` | 3 | ✓ |
 
 ## Special / Plan 9 Specific
 
@@ -142,7 +142,7 @@
 | **1a** | ████████ 22/22 ✅ | 22 | Parser, DAG, serial exec, core variables, attrs, scheduling |
 | **1b** | ████████ 12/12 ✅ | 12 | Includes, recipe-time vars, missing intermediates, CLI flags |
 | **2** | ████████ 22/22 ✅ | 22 | %/&/R metarules, NPROC parallel, namelists, pruning, includes |
-| **3** | █░░░░░░░ 2/10 | 10 | Aggregates, P attribute, -d debug, duckscript, polish |
+| **3** | █████░░░ 5/10 | 10 | Aggregates, P attribute, -d debug, duckscript, polish |
 | **P3** | ░░░░░░░░ 0/4 | 4 | Plan 9 specifics ($O, membername) |
 
 *Phase 3: duckscript Shell (from cargo-make research), archive aggregates, -d debug, polish.*
