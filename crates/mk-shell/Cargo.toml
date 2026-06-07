@@ -1,0 +1,8 @@
+[package]
+name = "mk-shell"
+version = "0.1.0"
+edition = "2021"
+description = "Shell abstraction for mk: sh, rc implementations"
+
+[dependencies]
+mk-core = { path = "../mk-core" }

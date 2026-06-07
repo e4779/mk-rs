@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "crates/mk-core",
+    "crates/mk-shell",
+    "crates/mk-cli",
+]
+resolver = "2"

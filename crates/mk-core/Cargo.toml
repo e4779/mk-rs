@@ -1,0 +1,8 @@
+[package]
+name = "mk-core"
+version = "0.1.0"
+edition = "2021"
+description = "mk-rust core: lexer, parser, DAG builder, scheduler"
+
+[dependencies]
+thiserror = "2"
