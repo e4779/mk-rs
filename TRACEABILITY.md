@@ -17,12 +17,12 @@
 
 | ID | Feature | Module | Phase | Status |
 |----|---------|--------|-------|--------|
-| F-001 | Rule definition (target: prereqs + recipe) | `parse` | 1a | — |
+| F-001 | Rule definition (target: prereqs + recipe) | `parse` | 1a | ✓ |
 | F-011 | Comments: `#` to newline | `lex` | 1a | ✓ |
 | F-012 | Line continuation: `\<newline>` | `lex` | 1a | ✓ |
 | F-013 | Includes: `< file` | `include`, `parse` | 1b | — |
-| F-014 | First target as default | `graph`, `cli` | 1a | — |
-| F-045 | Rule header evaluated at parse time | `parse`, `var` | 1a | — |
+| F-014 | First target as default | `graph`, `cli` | 1a | ◐ (graph done) |
+| F-045 | Rule header evaluated at parse time | `parse`, `var` | 1a | ◐ (parse done) |
 | F-063 | Backquote command substitution in mkfile | `lex`, `var` | 1b | ◐ (lex done) |
 | F-066 | Glob expansion in assignments | `var` | 2 | — |
 | F-067 | `-f mkfile` flag | `cli` | 1a | — |
@@ -31,11 +31,11 @@
 
 | ID | Feature | Module | Phase | Status |
 |----|---------|--------|-------|--------|
-| F-002 | Variables: `$VAR` / `${VAR}` | `var` | 1a | — |
-| F-003 | Assignment: `VAR=value` | `parse`, `var` | 1a | — |
+| F-002 | Variables: `$VAR` / `${VAR}` | `var` | 1a | ✓ |
+| F-003 | Assignment: `VAR=value` | `parse`, `var` | 1a | ◐ (parse done) |
 | F-039 | Namelist transform: `${VAR:A%B=C%D}` | `var` | 2 | — |
-| F-040 | Environment variable import | `var` | 1a | — |
-| F-041 | Variable precedence (cmdline > file > env > builtin) | `var` | 1a | — |
+| F-040 | Environment variable import | `var` | 1a | ✓ |
+| F-041 | Variable precedence (cmdline > file > env > builtin) | `var` | 1a | ✓ |
 | F-042 | Command-line assignment `mk VAR=value` | `cli`, `var` | 1a | — |
 | F-046 | Short-circuit variable eval (recipe execution time) | `var` | 1b | — |
 | F-064 | Variables exported to recipe environment | `var`, `recipe` | 1a | — |
@@ -55,11 +55,11 @@
 
 | ID | Feature | Module | Phase | Status |
 |----|---------|--------|-------|--------|
-| F-006 | Whole-DAG construction before execution | `graph` | 1a | — |
-| F-008 | Timestamp-based staleness | `graph` | 1a | — |
+| F-006 | Whole-DAG construction before execution | `graph` | 1a | ✓ |
+| F-008 | Timestamp-based staleness | `graph` | 1a | ✓ |
 | F-017 | Missing intermediate targets | `graph` | 1b | — |
-| F-018 | Multiple rules for same target (prereq merging) | `parse`, `graph` | 1a | — |
-| F-059 | Cycle detection and rejection | `graph` | 1a | — |
+| F-018 | Multiple rules for same target (prereq merging) | `parse`, `graph` | 1a | ◐ (parse done) |
+| F-059 | Cycle detection and rejection | `graph` | 1a | ✓ |
 | F-060 | Pruning irrelevant subgraphs | `graph` | 2 | — |
 | F-061 | Uniqueness of derivation | `graph` | 2 | — |
 | F-062 | Longest-path-first execution order | `graph`, `sched` | 1b | — |
@@ -137,7 +137,7 @@
 
 | Phase | Progress | Feature count | What it covers |
 |-------|:---:|:---:|---|
-| **1a** | ████░░░░ 5/22 | 22 | Parser, basic DAG, serial exec with sh, core variables, V/N/Q attrs |
+| **1a** | █████░░░ 12/22 | 22 | Parser, basic DAG, serial exec with sh, core variables, V/N/Q attrs |
 | **1b** | ░░░░░░░░ 0/12 | 12 | Include `< file`, prereq/target vars, missing intermediates, E/U attrs |
 | **2** | ░░░░░░░░ 0/22 | 22 | %/&/R metarules, transitive closure, pruning, NPROC parallel |
 | **3** | ░░░░░░░░ 0/10 | 10 | Aggregates, `<| cmd`, P attribute, dynamic mkfile, -d debug |

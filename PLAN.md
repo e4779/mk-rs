@@ -875,7 +875,7 @@ mkfile:
 
 | Phase | Features | Effort | What you can do after | Progress |
 |-------|:---:|--------|-----------------------|:--------:|
-| **1a** — Core MVP | 22 | ~2 weeks | Build a C program from explicit rules | 5/22 ██░░ |
+| **1a** — Core MVP | 22 | ~2 weeks | Build a C program from explicit rules | 12/22 █████░ |
 | **1b** — Variables & includes | 12 | ~1.5 weeks | Multi-file projects with `< file` includes | 0/12 |
 | **2** — Metarules & parallel | 22 | ~2.5 weeks | `%.o: %.c` patterns, NPROC parallel builds | 0/22 |
 | **3** — Aggregates & polish | 10 | ~2 weeks | Full plan9port mk compatibility | 0/10 |
