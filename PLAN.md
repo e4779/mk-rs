@@ -1270,6 +1270,28 @@ Target `#![forbid(unsafe_code)]` on `mk-core`. The only potential need for `unsa
 
 ## 8. Implementation Insights (post-Phase 1)
 
+### Test fixtures from real-world mkfiles
+
+43 real-world mkfiles collected in `testdata/external/` from 4 sources. Phase 2 testing strategy:
+
+**Phase 2a — ctSkennerton tests first (TDD driver)**
+These 17 files are small (avg 8 lines), focused, single-feature. Use them as acceptance tests:
+- `test2.mk` → $prereq/$stem/$target expansion → wire into graph+sched
+- `test13.mk` → `${var:%=...}` namelist transforms → implement in var.rs
+- `test17.mk` → `:R:` regex metarule → implement in parse+graph
+- `test6.mk`—`test9.mk` → `< file` includes → wire include module into parser
+- `test12.mk` → `:V:` virtual targets → already works, confirm
+- `test14.mk` → `<| command` dynamic mkfile → implement in include
+
+**Phase 2b — plan9port integration tests**
+Larger multi-file mkfiles for end-to-end validation:
+- `mkfile.test` → mk's own test suite (150 lines) — ultimate acceptance test
+- `src/lib9/mkfile` → large file lists, multi-directory metarules
+- `src/cmd/devdraw/mkfile` → conditional install, `:Q:`, `<|cmd`
+
+**Phase 2c — archive aggregates (9legacy bootmkfile)**
+- `bootmkfile` → `$BOOTLIB(%.$O):N:`, `$newprereq` — archive pattern
+
 ### What worked well
 
 1. **Arena (Vec + indices) for DAG** — NodeIndex/ArcIndex newtypes proved clean and fast. No Rc/RefCell pain. Graph mutation is localized to build_graph() and execute(); after that, the graph is read-only.
