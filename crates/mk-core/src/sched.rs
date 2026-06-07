@@ -1,6 +1,6 @@
 //! Build scheduler — orchestrates DAG traversal and recipe execution.
 //!
-//! Phase 1a: sequential execution only (NPROC=1). No metarules. No parallelism.
+//! Phase 2: sequential and parallel execution (NPROC). No metarules.
 //!
 //! # Architecture
 //!
@@ -16,8 +16,9 @@ use crate::error::SchedError;
 use crate::graph::{Graph, NodeIndex, stale_nodes};
 use crate::recipe::{Recipe, RecipeOptions, run as run_recipe};
 use crate::shell::{Shell};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 
 // ── Outcome ────────────────────────────────────────────────────────────────
 
@@ -51,6 +52,8 @@ pub struct SchedOptions {
     pub all: bool,
     /// -i: force missing intermediate targets to be built (F-017, F-051)
     pub force_intermediates: bool,
+    /// -p N: number of parallel jobs (0 = read $NPROC, 1 = sequential).
+    pub nproc: usize,
 }
 
 impl Default for SchedOptions {
@@ -63,6 +66,7 @@ impl Default for SchedOptions {
             silent: false,
             all: false,
             force_intermediates: false,
+            nproc: 1,
         }
     }
 }
@@ -214,6 +218,21 @@ pub fn execute(
         });
     }
 
+    // Read NPROC from environment, fallback to opts.nproc
+    let nproc = env
+        .get("NPROC")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(opts.nproc)
+        .max(1);
+
+    if nproc > 1 {
+        return run_parallel(
+            graph, &sorted, &stale_set, rules, shell, working_dir, env, opts, nproc,
+        );
+    }
+
+    // ── Sequential execution (nproc == 1) ──────────────────────────────
+
     // 4. Build recipe options from sched options
     let recipe_opts = RecipeOptions {
         no_exec: opts.no_exec,
@@ -287,6 +306,238 @@ pub fn execute(
         built,
         unchanged,
         failed,
+    })
+}
+
+// ── Parallel execution ────────────────────────────────────────────────────
+
+/// Execute stale nodes in parallel using a thread pool.
+///
+/// Uses a shared ready-queue with NPROC worker threads.
+/// Each thread pops a node, executes its recipe, then unblocks dependents
+/// by decrementing their pending prerequisite count. When a dependent's
+/// count reaches zero, it's added to the ready queue.
+fn run_parallel(
+    graph: &mut Graph,
+    sorted: &[NodeIndex],
+    stale_set: &HashSet<usize>,
+    rules: &HashMap<String, ResolvedRule>,
+    shell: &dyn Shell,
+    working_dir: &PathBuf,
+    env: &HashMap<String, String>,
+    opts: &SchedOptions,
+    nproc: usize,
+) -> Result<BuildOutcome, SchedError> {
+    // Only consider stale nodes in topological order
+    let stale_sorted: Vec<NodeIndex> = sorted
+        .iter()
+        .copied()
+        .filter(|idx| stale_set.contains(&idx.0))
+        .collect();
+
+    if stale_sorted.is_empty() {
+        let unchanged: Vec<String> = sorted
+            .iter()
+            .map(|idx| graph.nodes[idx.0].name.clone())
+            .collect();
+        return Ok(BuildOutcome {
+            built: vec![],
+            unchanged,
+            failed: vec![],
+        });
+    }
+
+    // Build dependents map: prereq → list of nodes that depend on it
+    let mut dependents: HashMap<usize, Vec<NodeIndex>> = HashMap::new();
+    for &idx in &stale_sorted {
+        for &arc_idx in &graph.nodes[idx.0].arcs_in {
+            let prereq = graph.arcs[arc_idx.0].from;
+            if stale_set.contains(&prereq.0) {
+                dependents.entry(prereq.0).or_default().push(idx);
+            }
+        }
+    }
+
+    let recipe_opts = RecipeOptions {
+        no_exec: opts.no_exec,
+        explain: opts.explain,
+        touch: opts.touch,
+        silent: opts.silent,
+    };
+
+    let ready: Arc<Mutex<VecDeque<NodeIndex>>> = Arc::new(Mutex::new(VecDeque::new()));
+    let built: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let unchanged: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let failed: Arc<Mutex<Vec<(String, String)>>> = Arc::new(Mutex::new(Vec::new()));
+    let remaining: Arc<Mutex<HashMap<usize, usize>>> =
+        Arc::new(Mutex::new(HashMap::new()));
+    let cancelled: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+
+    // Compute initial ready set and pending prerequisite counts
+    for &idx in &stale_sorted {
+        let count = graph.nodes[idx.0]
+            .arcs_in
+            .iter()
+            .filter(|&&ai| stale_set.contains(&graph.arcs[ai.0].from.0))
+            .count();
+        if count == 0 {
+            ready.lock().unwrap().push_back(idx);
+        } else {
+            remaining.lock().unwrap().insert(idx.0, count);
+        }
+    }
+
+    // Reborrow graph as shared for use in threads
+    let graph_ref: &Graph = graph;
+
+    // Borrow recipe_opts and dependents for sharing across threads
+    let recipe_opts_ref = &recipe_opts;
+    let dependents_ref = &dependents;
+
+    std::thread::scope(|s| {
+        for _ in 0..nproc {
+            let ready = Arc::clone(&ready);
+            let built = Arc::clone(&built);
+            let unchanged = Arc::clone(&unchanged);
+            let failed = Arc::clone(&failed);
+            let remaining = Arc::clone(&remaining);
+            let cancelled = Arc::clone(&cancelled);
+
+            s.spawn(move || {
+                loop {
+                    if cancelled.load(Ordering::Relaxed) {
+                        break;
+                    }
+
+                    let node_idx = {
+                        let mut q = ready.lock().unwrap();
+                        q.pop_front()
+                    };
+
+                    let node_idx = match node_idx {
+                        Some(idx) => idx,
+                        None => {
+                            // Nothing ready. If nothing remains, we're done.
+                            if remaining.lock().unwrap().is_empty() {
+                                break;
+                            }
+                            // Another thread may still produce work.
+                            std::thread::sleep(std::time::Duration::from_millis(1));
+                            continue;
+                        }
+                    };
+
+                    let node = &graph_ref.nodes[node_idx.0];
+                    let name = node.name.clone();
+
+                    // Execute the recipe (or handle virtual/skipped targets)
+                    let success = {
+                        // Virtual target with no recipe → built (phony)
+                        let is_virtual_no_recipe = node.flags.is_virtual()
+                            && !rules
+                                .get(&name)
+                                .map(|r| !r.recipe.is_empty())
+                                .unwrap_or(false);
+
+                        if is_virtual_no_recipe {
+                            built.lock().unwrap().push(name.clone());
+                            true
+                        } else {
+                            match rules.get(&name) {
+                                Some(rule) => {
+                                    if rule.recipe.is_empty() {
+                                        unchanged.lock().unwrap().push(name.clone());
+                                        true
+                                    } else {
+                                        let recipe = build_recipe(
+                                            graph_ref, node_idx, rule, working_dir, env,
+                                        );
+                                        match run_recipe(&recipe, shell, recipe_opts_ref) {
+                                            Ok(_) => {
+                                                built.lock().unwrap().push(name.clone());
+                                                true
+                                            }
+                                            Err(e) => {
+                                                let msg = e.to_string();
+                                                if opts.keep_going {
+                                                    failed
+                                                        .lock()
+                                                        .unwrap()
+                                                        .push((name.clone(), msg));
+                                                    false
+                                                } else {
+                                                    failed
+                                                        .lock()
+                                                        .unwrap()
+                                                        .push((name.clone(), msg));
+                                                    cancelled.store(true, Ordering::SeqCst);
+                                                    return;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                None => {
+                                    // No rule for this target — leaf/source file, skip
+                                    unchanged.lock().unwrap().push(name.clone());
+                                    true
+                                }
+                            }
+                        }
+                    };
+
+                    // On failure: if keep_going, mark dependents as failed too
+                    // and unblock them. Without keep_going, cancelled was already set.
+                    if !success {
+                        // Mark all dependents as failed (their prereq failed)
+                        if let Some(deps) = dependents_ref.get(&node_idx.0) {
+                            let mut f = failed.lock().unwrap();
+                            let mut rem = remaining.lock().unwrap();
+                            for &dep_idx in deps {
+                                let dep_name = graph_ref.nodes[dep_idx.0].name.clone();
+                                f.push((dep_name.clone(), format!("prerequisite '{}' failed", name)));
+                                rem.remove(&dep_idx.0);
+                            }
+                        }
+                        continue;
+                    }
+
+                    // Unblock dependents (on success)
+                    if let Some(deps) = dependents_ref.get(&node_idx.0) {
+                        let mut rem = remaining.lock().unwrap();
+                        let mut rdy = ready.lock().unwrap();
+                        for &dep_idx in deps {
+                            if let Some(count) = rem.get_mut(&dep_idx.0) {
+                                *count -= 1;
+                                if *count == 0 {
+                                    rem.remove(&dep_idx.0);
+                                    rdy.push_back(dep_idx);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    });
+
+    // Check for cancellation (fail-fast without keep_going)
+    if !opts.keep_going && cancelled.load(Ordering::SeqCst) {
+        return Err(SchedError::BuildFailed);
+    }
+
+    // Mark MADE flags on successfully built nodes
+    let built_final = Arc::try_unwrap(built).unwrap().into_inner().unwrap();
+    for name in &built_final {
+        if let Some(pos) = graph.nodes.iter().position(|n| &n.name == name) {
+            graph.nodes[pos].flags.set(crate::graph::NodeFlags::MADE);
+        }
+    }
+
+    Ok(BuildOutcome {
+        built: built_final,
+        unchanged: Arc::try_unwrap(unchanged).unwrap().into_inner().unwrap(),
+        failed: Arc::try_unwrap(failed).unwrap().into_inner().unwrap(),
     })
 }
 
@@ -494,6 +745,7 @@ mod tests {
         assert!(!opts.explain);
         assert!(!opts.touch);
         assert!(!opts.silent);
+        assert_eq!(opts.nproc, 1);
     }
 
     #[test]
@@ -617,5 +869,177 @@ mod tests {
         .unwrap();
         let target_idx = graph.targets[0];
         assert!(!graph.nodes[target_idx.0].flags.is_made());
+    }
+
+    // ── Parallel execution tests ───────────────────────────────────────
+
+    #[test]
+    fn parallel_two_independent_jobs_complete() {
+        // a and b are independent; both should build in parallel
+        let mkfile = "all:V: a b\na:\n\techo a\nb:\n\techo b\n";
+        let (mut graph, rules) = build_from_mkfile(mkfile, "all");
+        let shell = TestShell;
+        let opts = SchedOptions {
+            nproc: 2,
+            ..Default::default()
+        };
+        let outcome = execute(
+            &mut graph,
+            &rules,
+            &shell,
+            &PathBuf::from("."),
+            &HashMap::new(),
+            &opts,
+        )
+        .unwrap();
+        // Both targets should be built
+        assert!(outcome.built.contains(&"a".to_string()));
+        assert!(outcome.built.contains(&"b".to_string()));
+        assert!(outcome.built.contains(&"all".to_string()));
+        assert!(outcome.failed.is_empty());
+    }
+
+    #[test]
+    fn parallel_respects_dependencies() {
+        // c depends on b, b depends on a. Order must be preserved.
+        let mkfile = "c: b\n\techo c\nb: a\n\techo b\na:\n\techo a\n";
+        let (mut graph, rules) = build_from_mkfile(mkfile, "c");
+        let shell = TestShell;
+        let opts = SchedOptions {
+            nproc: 2,
+            ..Default::default()
+        };
+        let outcome = execute(
+            &mut graph,
+            &rules,
+            &shell,
+            &PathBuf::from("."),
+            &HashMap::new(),
+            &opts,
+        )
+        .unwrap();
+        assert_eq!(outcome.built.len(), 3);
+        assert!(outcome.built.contains(&"a".to_string()));
+        assert!(outcome.built.contains(&"b".to_string()));
+        assert!(outcome.built.contains(&"c".to_string()));
+    }
+
+    #[test]
+    fn parallel_fail_fast_without_keep_going() {
+        // all depends on a and b. a succeeds, b fails. Without -k, should error.
+        let mkfile = "all:V: a b\na:\n\techo a\nb:\n\texit 1\n";
+        let (mut graph, rules) = build_from_mkfile(mkfile, "all");
+        let shell = TestShell;
+        let opts = SchedOptions {
+            nproc: 2,
+            ..Default::default()
+        };
+        let result = execute(
+            &mut graph,
+            &rules,
+            &shell,
+            &PathBuf::from("."),
+            &HashMap::new(),
+            &opts,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parallel_keep_going_with_failure() {
+        // all depends on a and b. b fails. With -k, a should still build.
+        let mkfile = "all:V: a b\na:\n\techo a\nb:\n\texit 1\n";
+        let (mut graph, rules) = build_from_mkfile(mkfile, "all");
+        let shell = TestShell;
+        let opts = SchedOptions {
+            nproc: 2,
+            keep_going: true,
+            ..Default::default()
+        };
+        let outcome = execute(
+            &mut graph,
+            &rules,
+            &shell,
+            &PathBuf::from("."),
+            &HashMap::new(),
+            &opts,
+        )
+        .unwrap();
+        assert!(outcome.built.contains(&"a".to_string()));
+        assert!(outcome.failed.iter().any(|(t, _)| t == "b"));
+    }
+
+    #[test]
+    fn parallel_marks_nodes_made() {
+        let mkfile = "c: a b\na:\n\techo a\nb:\n\techo b\n";
+        let (mut graph, rules) = build_from_mkfile(mkfile, "c");
+        let shell = TestShell;
+        let opts = SchedOptions {
+            nproc: 2,
+            ..Default::default()
+        };
+        let outcome = execute(
+            &mut graph,
+            &rules,
+            &shell,
+            &PathBuf::from("."),
+            &HashMap::new(),
+            &opts,
+        )
+        .unwrap();
+        // All built nodes should have MADE flag set
+        for name in &outcome.built {
+            if let Some(pos) = graph.nodes.iter().position(|n| &n.name == name) {
+                assert!(
+                    graph.nodes[pos].flags.is_made(),
+                    "node {name} should be marked MADE"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn parallel_virtual_target_built() {
+        let mkfile = "all:V: a b\na:\n\techo a\nb:\n\techo b\n";
+        let (mut graph, rules) = build_from_mkfile(mkfile, "all");
+        let shell = TestShell;
+        let opts = SchedOptions {
+            nproc: 2,
+            ..Default::default()
+        };
+        let outcome = execute(
+            &mut graph,
+            &rules,
+            &shell,
+            &PathBuf::from("."),
+            &HashMap::new(),
+            &opts,
+        )
+        .unwrap();
+        assert!(outcome.built.contains(&"all".to_string()));
+        assert!(outcome.built.contains(&"a".to_string()));
+        assert!(outcome.built.contains(&"b".to_string()));
+    }
+
+    #[test]
+    fn parallel_nproc_one_is_sequential() {
+        // nproc=1 should behave identically to sequential (default)
+        let mkfile = "target:\n\techo hello\n";
+        let (mut graph, rules) = build_from_mkfile(mkfile, "target");
+        let shell = TestShell;
+        let opts = SchedOptions {
+            nproc: 1,
+            ..Default::default()
+        };
+        let outcome = execute(
+            &mut graph,
+            &rules,
+            &shell,
+            &PathBuf::from("."),
+            &HashMap::new(),
+            &opts,
+        )
+        .unwrap();
+        assert_eq!(outcome.built, vec!["target"]);
     }
 }

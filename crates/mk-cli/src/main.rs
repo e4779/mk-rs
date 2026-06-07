@@ -160,6 +160,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         touch: cli.touch,
         silent: cli.silent,
         all: cli.all,
+        nproc: 1, // sequential by default; $NPROC env var overrides
         force_intermediates: cli.force_intermediates,
     };
 
