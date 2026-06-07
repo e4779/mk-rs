@@ -1,9 +1,186 @@
 // mk-cli: Command-line interface for mk-rust.
 //
-// Uses clap for argument parsing.
-// Thin wrapper around mk-core::build().
+// Plan 9 mk compatible build tool.
+// Thin wrapper around mk-core: parse args → read mkfile → build DAG → execute.
 
-// Stub — CLI will be added in Phase 1a.
+use std::collections::HashMap;
+use std::path::PathBuf;
+
+use clap::Parser;
+
+use mk_core::graph::build_graph;
+use mk_core::lex::{tokenize, ShellMode};
+use mk_core::parse::Stmt;
+use mk_core::sched::{execute, ResolvedRule, SchedOptions};
+use mk_core::var::{builtin_scope, import_env, Precedence};
+use mk_shell::ShShell;
+
+/// mk — maintain (make) related files
+///
+/// Reads dependency rules from a mkfile and executes recipes
+/// to bring targets up to date.
+#[derive(Parser)]
+#[command(name = "mk", version, about)]
+struct Cli {
+    /// Mkfile to read (default: mkfile)
+    #[arg(short = 'f', default_value = "mkfile")]
+    file: PathBuf,
+
+    /// Print commands but do not execute
+    #[arg(short = 'n')]
+    no_exec: bool,
+
+    /// Explain why each target is (or is not) being made
+    #[arg(short = 'e')]
+    explain: bool,
+
+    /// Touch targets instead of running recipes
+    #[arg(short = 't')]
+    touch: bool,
+
+    /// Assume all targets are out of date (stub — Phase 1b)
+    #[arg(short = 'a')]
+    all: bool,
+
+    /// Keep going after errors
+    #[arg(short = 'k')]
+    keep_going: bool,
+
+    /// Ignore missing intermediate targets (stub — Phase 1b)
+    #[arg(short = 'i')]
+    force_intermediates: bool,
+
+    /// Silent mode: don't print recipes before execution
+    #[arg(short = 's')]
+    sequential: bool,
+
+    /// Debug output: p (parse), g (graph), e (execution) (stub — Phase 1b)
+    #[arg(short = 'd')]
+    debug: Option<String>,
+
+    /// What-if mode: pretend listed targets are modified (stub — Phase 2)
+    #[arg(short = 'w')]
+    whatif: Option<String>,
+
+    /// Change to directory before building
+    #[arg(short = 'C')]
+    directory: Option<PathBuf>,
+
+    /// Targets to build (default: first target in mkfile)
+    targets: Vec<String>,
+}
+
 fn main() {
-    println!("mk-rust {}", env!("CARGO_PKG_VERSION"));
+    if let Err(e) = run() {
+        eprintln!("mk: {}", e);
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let cli = Cli::parse();
+
+    // Stub flags — parsed but not yet implemented
+    let _ = &cli.all;
+    let _ = &cli.force_intermediates;
+    let _ = &cli.debug;
+    let _ = &cli.whatif;
+
+    // Chdir if -C specified
+    if let Some(ref dir) = cli.directory {
+        std::env::set_current_dir(dir)?;
+    }
+
+    // Read mkfile: try -f argument first, fall back to "mkfile"
+    let input = std::fs::read_to_string(&cli.file).or_else(|_| {
+        std::fs::read_to_string("mkfile")
+    }).map_err(|_| {
+        format!(
+            "no mkfile: could not read '{}' or 'mkfile'",
+            cli.file.display()
+        )
+    })?;
+
+    // Lex + Parse
+    let tokens = tokenize(&input, ShellMode::Sh)?;
+    let stmts = mk_core::parse::parse(&tokens)?;
+
+    // Build variable scope: built-ins, environment, mkfile assignments
+    let mut scope = builtin_scope();
+    import_env(&mut scope);
+    for stmt in &stmts {
+        if let Stmt::Assign(a) = stmt {
+            scope.set(&a.name, &a.value, Precedence::Mkfile);
+        }
+    }
+
+    // Build rules map: target name → resolved rule
+    let mut rules: HashMap<String, ResolvedRule> = HashMap::new();
+    for stmt in &stmts {
+        if let Stmt::Rule(r) = stmt {
+            for t in &r.targets {
+                rules.insert(
+                    t.clone(),
+                    ResolvedRule {
+                        recipe: r.recipe.clone().unwrap_or_default(),
+                        attributes: r.attributes,
+                    },
+                );
+            }
+        }
+    }
+
+    // Determine targets: CLI args or first target of first rule
+    let target_names: Vec<String> = if cli.targets.is_empty() {
+        let first_rule = stmts.iter().find_map(|s| {
+            if let Stmt::Rule(r) = s {
+                Some(r)
+            } else {
+                None
+            }
+        });
+        match first_rule {
+            Some(r) => vec![r.targets[0].clone()],
+            None => {
+                eprintln!("mk: no targets specified and no rules in mkfile");
+                std::process::exit(1);
+            }
+        }
+    } else {
+        cli.targets.clone()
+    };
+
+    // Build DAG
+    let mut graph = build_graph(&stmts, &target_names)?;
+
+    // Build sched options from CLI flags
+    let opts = SchedOptions {
+        keep_going: cli.keep_going,
+        no_exec: cli.no_exec,
+        explain: cli.explain,
+        touch: cli.touch,
+        silent: cli.sequential,
+    };
+
+    // Build environment from variable scope
+    let env: HashMap<String, String> = scope
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+
+    let working_dir = std::env::current_dir()?;
+
+    // Execute
+    let shell = ShShell;
+    let outcome = execute(&mut graph, &rules, &shell, &working_dir, &env, &opts)?;
+
+    // Print failures (only reachable with -k)
+    if !outcome.failed.is_empty() {
+        for (target, msg) in &outcome.failed {
+            eprintln!("mk: {}: {}", target, msg);
+        }
+        std::process::exit(1);
+    }
+
+    Ok(())
 }
