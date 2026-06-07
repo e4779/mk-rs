@@ -14,6 +14,8 @@ use mk_core::parse::Stmt;
 use mk_core::sched::{execute, ResolvedRule, SchedOptions};
 use mk_core::var::{builtin_scope, import_env, Precedence};
 use mk_shell::ShShell;
+#[cfg(feature = "duckscript")]
+use mk_shell::DuckShell;
 
 /// mk — maintain (make) related files
 ///
@@ -68,6 +70,19 @@ struct Cli {
 
     /// Targets to build (default: first target in mkfile)
     targets: Vec<String>,
+}
+
+/// Simple % pattern matching (subset of graph.rs::match_metarule)
+fn match_simple(target: &str, pattern: &str) -> Option<String> {
+    if let Some(pos) = pattern.find('%') {
+        let prefix = &pattern[..pos];
+        let suffix = &pattern[pos + 1..];
+        if target.starts_with(prefix) && target.ends_with(suffix) {
+            let stem = &target[prefix.len()..target.len() - suffix.len()];
+            return Some(stem.to_string());
+        }
+    }
+    None
 }
 
 fn main() {
@@ -163,12 +178,47 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Build DAG
     let mut graph = build_graph(&stmts, &target_names)?;
 
-    // MKSHELL: allow switching shell via env variable (F-053)
-    // Only sh is supported for now; rc support comes in Phase 3.
-    let mkshell = scope.get("MKSHELL").unwrap_or("/bin/sh").to_string();
-    if mkshell.contains("rc") {
-        eprintln!("mk: warning: rc shell not yet supported, using sh");
+    // Resolve metarule recipes for graph nodes without explicit rules
+    for node in &graph.nodes {
+        if !rules.contains_key(&node.name) {
+            for stmt in &stmts {
+                if let Stmt::Rule(r) = stmt {
+                    if r.is_metarule && !r.is_regex {
+                        for pat in &r.targets {
+                            if !pat.contains('%') && !pat.contains('&') { continue; }
+                            if let Some(_) = match_simple(&node.name, pat) {
+                                rules.insert(node.name.clone(), ResolvedRule {
+                                    recipe: r.recipe.clone().unwrap_or_default(),
+                                    attributes: r.attributes,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
+
+    // MKSHELL: allow switching shell via env variable (F-053)
+    let mkshell = scope.get("MKSHELL").unwrap_or("/bin/sh").to_string();
+
+    // Select shell via $MKSHELL
+    let shell: Box<dyn mk_core::shell::Shell> = {
+        if mkshell.contains("duckscript") || mkshell.ends_with(".ds") {
+            #[cfg(not(feature = "duckscript"))]
+            {
+                return Err(format!(
+                    "mk: duckscript support not compiled in (rebuild with --features duckscript)"
+                ).into());
+            }
+            #[cfg(feature = "duckscript")]
+            {
+                Box::new(DuckShell)
+            }
+        } else {
+            Box::new(ShShell)
+        }
+    };
 
     // Build sched options from CLI flags
     let mkflags = std::env::args()
@@ -191,7 +241,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         all: cli.all,
         nproc: 1, // sequential by default; $NPROC env var overrides
         force_intermediates: cli.force_intermediates,
-        mkshell,
+        mkshell: shell.name().to_string(),
         mkflags,
         mkargs,
     };
@@ -201,9 +251,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let working_dir = std::env::current_dir()?;
 
-    // Execute
-    let shell = ShShell; // always sh for now, RcShell in Phase 3
-    let outcome = execute(&mut graph, &rules, &shell, &working_dir, &env, &opts)?;
+    let outcome = execute(&mut graph, &rules, shell.as_ref(), &working_dir, &env, &opts)?;
 
     // Print failures (only reachable with -k)
     if !outcome.failed.is_empty() {

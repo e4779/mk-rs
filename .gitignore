@@ -1,4 +1,5 @@
 target/
 /tmp/
 testdata/**/hello
+testdata/**/prog
 testdata/**/*.o

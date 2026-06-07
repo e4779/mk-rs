@@ -1,0 +1,13 @@
+CC = cc
+CFLAGS = -Wall
+
+%.o: %.c
+	$CC $CFLAGS -c $stem.c -o $target
+
+prog: main.o util.o
+	$CC -o $target $prereq
+
+all:V: prog
+
+clean:V:
+	rm -f *.o prog
