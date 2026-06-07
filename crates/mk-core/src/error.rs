@@ -115,8 +115,8 @@ pub enum ShellError {
 
 #[derive(Debug, Error)]
 pub enum RecipeError {
-    #[error("recipe command failed with exit code {code}")]
-    CommandFailed { code: i32 },
+    #[error("recipe command failed with exit code {code}: {stderr}")]
+    CommandFailed { code: i32, stderr: String },
 
     #[error("recipe target {target} deleted after error")]
     TargetDeleted { target: String },

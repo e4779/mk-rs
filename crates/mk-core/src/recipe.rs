@@ -171,7 +171,7 @@ pub fn run(
     let result = shell
         .execute(&script, &env, &recipe.working_dir)
         .map_err(|e| match e {
-            ShellError::CommandFailed { code, .. } => RecipeError::CommandFailed { code },
+            ShellError::CommandFailed { code, stderr } => RecipeError::CommandFailed { code, stderr },
             ShellError::ShellNotFound { .. } => RecipeError::Io(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 e.to_string(),
@@ -194,6 +194,7 @@ pub fn run(
         }
         return Err(RecipeError::CommandFailed {
             code: result.exit_code,
+            stderr: result.stderr.clone(),
         });
     }
 
@@ -357,7 +358,7 @@ mod tests {
         let result = run(&recipe, &shell, &RecipeOptions::default());
         assert!(result.is_err());
         match result.unwrap_err() {
-            RecipeError::CommandFailed { code } => assert_eq!(code, 1),
+            RecipeError::CommandFailed { code, .. } => assert_eq!(code, 1),
             other => panic!("expected CommandFailed, got {other:?}"),
         }
     }
@@ -543,7 +544,7 @@ mod tests {
         let result = run(&recipe, &shell, &RecipeOptions::default());
         assert!(result.is_err());
         match result.unwrap_err() {
-            RecipeError::CommandFailed { code } => assert_eq!(code, 1),
+            RecipeError::CommandFailed { code, .. } => assert_eq!(code, 1),
             other => panic!("expected CommandFailed, got {other:?}"),
         }
     }
