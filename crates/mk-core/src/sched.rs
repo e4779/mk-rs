@@ -114,7 +114,7 @@ fn topological_sort(graph: &Graph, targets: &[NodeIndex]) -> Vec<NodeIndex> {
 
 /// Build a Recipe struct from a graph node and resolved rule.
 ///
-/// In Phase 1a, takes recipe text directly (later phases will do variable expansion).
+/// Extracts stem from metarule arcs for `$stem` variable expansion.
 fn build_recipe(
     graph: &Graph,
     node_idx: NodeIndex,
@@ -132,6 +132,20 @@ fn build_recipe(
         })
         .collect();
 
+    // Extract stem from metarule arc (if any)
+    let stem = node
+        .arcs_in
+        .iter()
+        .filter_map(|&arc_idx| {
+            let arc = &graph.arcs[arc_idx.0];
+            if arc.is_meta && !arc.stem.is_empty() {
+                Some(arc.stem.clone())
+            } else {
+                None
+            }
+        })
+        .next();
+
     Recipe {
         target: node.name.clone(),
         prereqs,
@@ -139,6 +153,7 @@ fn build_recipe(
         working_dir: working_dir.clone(),
         env: env.clone(),
         attributes: rule.attributes,
+        stem,
     }
 }
 

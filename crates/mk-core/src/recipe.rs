@@ -27,6 +27,8 @@ pub struct Recipe {
     pub env: HashMap<String, String>,
     /// Rule attributes (affect execution behavior).
     pub attributes: Attributes,
+    /// Stem from metarule match (None for concrete rules).
+    pub stem: Option<String>,
 }
 
 // ── Options ────────────────────────────────────────────────────────────────
@@ -158,6 +160,9 @@ pub fn run(
     env.insert("target".to_string(), recipe.target.clone());
     env.insert("prereq".to_string(), recipe.prereqs.join(" "));
     env.insert("pid".to_string(), std::process::id().to_string());
+    if let Some(ref stem) = recipe.stem {
+        env.insert("stem".to_string(), stem.clone());
+    }
 
     let result = shell
         .execute(&script, &env, &recipe.working_dir)
@@ -267,6 +272,7 @@ mod tests {
             working_dir: PathBuf::from("."),
             env: HashMap::new(),
             attributes: Attributes::default(),
+            stem: None,
         }
     }
 
@@ -587,5 +593,20 @@ mod tests {
                 .unwrap_or(false),
             "pid should be a valid integer"
         );
+    }
+
+    #[test]
+    fn run_injects_stem_for_metarule() {
+        let shell = MockShell {
+            exit_code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+            last_env: std::sync::Mutex::new(HashMap::new()),
+        };
+        let mut recipe = make_recipe();
+        recipe.stem = Some("hello".into());
+        run(&recipe, &shell, &RecipeOptions::default()).unwrap();
+        let env = shell.last_env.lock().unwrap();
+        assert_eq!(env.get("stem").map(|s| s.as_str()), Some("hello"));
     }
 }
