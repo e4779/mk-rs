@@ -19,3 +19,6 @@
 pub mod lex;
 pub mod attr;
 pub mod error;
+pub mod parse;
+pub mod var;
+pub mod graph;
