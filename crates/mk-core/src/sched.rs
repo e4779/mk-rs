@@ -304,10 +304,12 @@ pub fn execute(
             }
             Err(e) => {
                 let msg = e.to_string();
+                failed.push((node.name.clone(), msg));
                 if opts.keep_going {
-                    failed.push((node.name.clone(), msg));
+                    continue;
                 } else {
-                    return Err(SchedError::BuildFailed);
+                    // Stop processing further targets, but outcome has the failure details
+                    break;
                 }
             }
         }
@@ -535,9 +537,8 @@ fn run_parallel(
     });
 
     // Check for cancellation (fail-fast without keep_going)
-    if !opts.keep_going && cancelled.load(Ordering::SeqCst) {
-        return Err(SchedError::BuildFailed);
-    }
+    // Outcome already has the failed target(s) — let CLI decide exit code
+    let _cancelled = cancelled.load(Ordering::SeqCst);
 
     // Mark MADE flags on successfully built nodes
     let built_final = Arc::try_unwrap(built).unwrap().into_inner().unwrap();
@@ -745,7 +746,9 @@ mod tests {
             &HashMap::new(),
             &SchedOptions::default(),
         );
-        assert!(result.is_err());
+        assert!(result.is_ok());
+        let outcome = result.unwrap();
+        assert!(!outcome.failed.is_empty(), "dep should have failed");
     }
 
     // ── SchedOptions tests ─────────────────────────────────────────────
@@ -955,7 +958,9 @@ mod tests {
             &HashMap::new(),
             &opts,
         );
-        assert!(result.is_err());
+        assert!(result.is_ok());
+        let outcome = result.unwrap();
+        assert!(!outcome.failed.is_empty(), "target should fail");
     }
 
     #[test]

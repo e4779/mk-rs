@@ -638,8 +638,8 @@ fn check_stale(
     });
 
     let stale = if node.flags.is_virtual() {
-        // Virtual: stale if any prereq is stale
-        prereq_stale
+        // Virtual: stale if any prereq is stale, OR if no prereqs (always run)
+        prereq_stale || node.arcs_in.is_empty()
     } else {
         // File target
         match eff_mtime {
@@ -1389,5 +1389,14 @@ mod tests {
         // Names without archive(member) pattern should still error with no rule
         let result = graph_from_str("", &["just.a.file.o"]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn virtual_no_prereqs_always_stale() {
+        // clean:V: with recipe but no prereqs should ALWAYS be stale
+        let g = graph_from_str("clean:V:\n\trm -f *.o\n", &["clean"]).unwrap();
+        let stale = stale_nodes(&g, false);
+        let clean_idx = g.nodes.iter().position(|n| n.name == "clean").unwrap();
+        assert!(stale.contains(&NodeIndex(clean_idx)), "virtual target with no prereqs must always be stale");
     }
 }
