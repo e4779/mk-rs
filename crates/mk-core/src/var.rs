@@ -7,7 +7,8 @@
 //!   ${VAR} → value of VAR (exact name between braces)
 //!
 //! Unknown variables silently expand to the empty string.
-//! Expansion is recursive (re-scanned up to 10 levels).
+//! Expansion is recursive (re-scanned up to 10 levels) and supports
+//! namelist transforms: `${VAR:%.c=%.o}`.
 
 use std::collections::{HashMap, HashSet};
 
@@ -190,11 +191,29 @@ impl Scope {
                         i += 2;
                     }
                     b'{' => {
-                        // ${VAR}
                         if let Some(end) = input[i + 2..].find('}') {
-                            let name = &input[i + 2..i + 2 + end];
-                            if let Some(val) = self.get(name) {
-                                result.push_str(val);
+                            let content = &input[i + 2..i + 2 + end];
+                            // Check for namelist transform: ${VAR:pattern=replacement}
+                            if let Some(colon_pos) = content.find(':') {
+                                let var_name = &content[..colon_pos];
+                                let subst = &content[colon_pos + 1..];
+                                if let Some(eq_pos) = subst.find('=') {
+                                    let pattern = &subst[..eq_pos];
+                                    let replacement = &subst[eq_pos + 1..];
+                                    let value = self.get(var_name).unwrap_or("");
+                                    let expanded =
+                                        namelist_transform(value, pattern, replacement);
+                                    result.push_str(&expanded);
+                                } else {
+                                    // Pattern without = — just do simple lookup
+                                    result
+                                        .push_str(self.get(content).unwrap_or(""));
+                                }
+                            } else {
+                                // Simple ${VAR}
+                                if let Some(val) = self.get(content) {
+                                    result.push_str(val);
+                                }
                             }
                             i = i + 2 + end + 1; // skip past }
                         } else {
@@ -252,6 +271,51 @@ impl<'a> Iterator for ScopeIter<'a> {
 }
 
 impl<'a> ExactSizeIterator for ScopeIter<'a> {}
+
+// ── Namelist transform ─────────────────────────────────────────────────────
+
+/// Transform a space-separated list of words using a %-based pattern.
+///
+/// Pattern `A%B` matches words with prefix A and suffix B, capturing the
+/// middle as the *stem*. Replacement `C%D` emits prefix C + stem + suffix D.
+/// Words that don't match the pattern are dropped.
+///
+/// This implements mk's `${SRC:%.c=%.o}` namelist transformation.
+fn namelist_transform(value: &str, pattern: &str, replacement: &str) -> String {
+    // Split pattern into prefix and suffix around '%'.
+    let (pat_pre, pat_suf) = if let Some(pos) = pattern.find('%') {
+        (&pattern[..pos], &pattern[pos + 1..])
+    } else {
+        // No % in pattern — no transformation possible.
+        return value.to_string();
+    };
+
+    // Split replacement into prefix and suffix around '%'.
+    let (repl_pre, repl_suf) = if let Some(pos) = replacement.find('%') {
+        (&replacement[..pos], &replacement[pos + 1..])
+    } else {
+        ("", replacement)
+    };
+
+    let mut result: Vec<String> = Vec::new();
+    for word in value.split_whitespace() {
+        if word.starts_with(pat_pre) && word.ends_with(pat_suf) {
+            let stem_start = pat_pre.len();
+            let stem_end = word.len() - pat_suf.len();
+            if stem_start <= stem_end {
+                let stem = &word[stem_start..stem_end];
+                let mut out =
+                    String::with_capacity(repl_pre.len() + stem.len() + repl_suf.len());
+                out.push_str(repl_pre);
+                out.push_str(stem);
+                out.push_str(repl_suf);
+                result.push(out);
+            }
+        }
+        // Words that don't match the pattern are dropped.
+    }
+    result.join(" ")
+}
 
 // ── Built-in defaults & environment ────────────────────────────────────────
 
@@ -614,5 +678,75 @@ mod tests {
         child.set("FOO", "child", Precedence::Mkfile);
         let map = child.export();
         assert_eq!(map.get("FOO").map(|s| s.as_str()), Some("child"));
+    }
+
+    // ── Namelist transform tests ───────────────────────────────────────
+
+    #[test]
+    fn expand_namelist_simple() {
+        let mut s = Scope::new();
+        s.set("SRC", "a.c b.c c.c", Precedence::Mkfile);
+        assert_eq!(s.expand("${SRC:%.c=%.o}").unwrap(), "a.o b.o c.o");
+    }
+
+    #[test]
+    fn expand_namelist_partial_match() {
+        let mut s = Scope::new();
+        s.set("FILES", "src/main.c README.md src/lib.c", Precedence::Mkfile);
+        // Only .c files match %.c pattern; non-matching words are dropped.
+        assert_eq!(
+            s.expand("${FILES:%.c=%.o}").unwrap(),
+            "src/main.o src/lib.o"
+        );
+    }
+
+    #[test]
+    fn expand_namelist_prefix_change() {
+        let mut s = Scope::new();
+        s.set("SRC", "src/main.c src/util.c", Precedence::Mkfile);
+        // Change prefix: src/%.c → obj/%.o
+        assert_eq!(
+            s.expand("${SRC:src/%.c=obj/%.o}").unwrap(),
+            "obj/main.o obj/util.o"
+        );
+    }
+
+    #[test]
+    fn expand_namelist_no_match() {
+        let mut s = Scope::new();
+        s.set("SRC", "a.c b.c", Precedence::Mkfile);
+        // Pattern doesn't match any word → empty result.
+        assert_eq!(s.expand("${SRC:%.rs=%.o}").unwrap(), "");
+    }
+
+    #[test]
+    fn expand_namelist_undefined_var() {
+        let s = Scope::new();
+        // Undefined variable → empty string → empty result.
+        assert_eq!(s.expand("${NOSUCH:%.c=%.o}").unwrap(), "");
+    }
+
+    #[test]
+    fn expand_namelist_no_percent_in_pattern() {
+        let mut s = Scope::new();
+        s.set("SRC", "hello world", Precedence::Mkfile);
+        // No % in pattern → returns value unchanged.
+        assert_eq!(s.expand("${SRC:hello=bye}").unwrap(), "hello world");
+    }
+
+    #[test]
+    fn expand_namelist_no_percent_in_replacement() {
+        let mut s = Scope::new();
+        s.set("SRC", "a.c b.c", Precedence::Mkfile);
+        // Replacement without % replaces the matched suffix.
+        assert_eq!(s.expand("${SRC:%.c=.o}").unwrap(), "a.o b.o");
+    }
+
+    #[test]
+    fn expand_namelist_with_simple_var_fallback() {
+        // If braces contain colon but no '=', treat as simple ${VAR} lookup.
+        let mut s = Scope::new();
+        s.set("FOO:BAR", "gotit", Precedence::Mkfile);
+        assert_eq!(s.expand("${FOO:BAR}").unwrap(), "gotit");
     }
 }

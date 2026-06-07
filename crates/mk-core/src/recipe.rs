@@ -159,6 +159,7 @@ pub fn run(
     let mut env = recipe.env.clone();
     env.insert("target".to_string(), recipe.target.clone());
     env.insert("prereq".to_string(), recipe.prereqs.join(" "));
+    env.insert("newprereq".to_string(), recipe.prereqs.join(" "));
     env.insert("pid".to_string(), std::process::id().to_string());
     if let Some(ref stem) = recipe.stem {
         env.insert("stem".to_string(), stem.clone());
@@ -608,5 +609,23 @@ mod tests {
         run(&recipe, &shell, &RecipeOptions::default()).unwrap();
         let env = shell.last_env.lock().unwrap();
         assert_eq!(env.get("stem").map(|s| s.as_str()), Some("hello"));
+    }
+
+    #[test]
+    fn run_injects_newprereq() {
+        let shell = MockShell {
+            exit_code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+            last_env: std::sync::Mutex::new(HashMap::new()),
+        };
+        let recipe = make_recipe();
+        run(&recipe, &shell, &RecipeOptions::default()).unwrap();
+        let env = shell.last_env.lock().unwrap();
+        assert!(env.contains_key("newprereq"));
+        assert_eq!(
+            env.get("newprereq").map(|s| s.as_str()),
+            Some("hello.c")
+        );
     }
 }
