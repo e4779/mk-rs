@@ -249,6 +249,7 @@ pub fn build_graph_with_nrep(
     };
     let mut name_to_index: HashMap<String, NodeIndex> = HashMap::new();
 
+    #[allow(clippy::too_many_arguments)]
     fn build_node<'a>(
         graph: &mut Graph,
         rules_by_target: &HashMap<&str, Vec<&'a Rule>>,
@@ -325,17 +326,17 @@ pub fn build_graph_with_nrep(
 
             for metarule in metarules {
                 // F-027: n attribute — skip metarule if target doesn't exist on fs
-                if metarule.attributes.is_no_virtual() {
-                    if !std::path::Path::new(name).exists() {
-                        continue;
-                    }
+                if metarule.attributes.is_no_virtual()
+                    && !std::path::Path::new(name).exists()
+                {
+                    continue;
                 }
                 if let Some(stem) = match_metarule(name, &metarule.targets[0]) {
                     // Compute substituted prereqs for this match
                     let prereqs: Vec<String> = metarule
                         .prereqs
                         .iter()
-                        .map(|p| p.replace('%', &stem).replace('&', &stem))
+                        .map(|p| p.replace(['%', '&'], &stem))
                         .collect();
 
                     if !matched {
@@ -641,37 +642,36 @@ fn check_stale(
         prereq_stale
     } else {
         // File target
-        if eff_mtime.is_none() {
-            // Doesn't exist and can't pretend → stale
-            true
-        } else {
-            let mtime = eff_mtime.unwrap();
-            // Check if any prereq is newer than our (possibly pretend) mtime
-            prereq_stale
-                || node.arcs_in.iter().any(|&arc_idx| {
-                    let arc = &graph.arcs[arc_idx.0];
-                    let prereq_idx = arc.from;
+        match eff_mtime {
+            None => true, // Doesn't exist and can't pretend → stale
+            Some(mtime) => {
+                // Check if any prereq is newer than our (possibly pretend) mtime
+                prereq_stale
+                    || node.arcs_in.iter().any(|&arc_idx| {
+                        let arc = &graph.arcs[arc_idx.0];
+                        let prereq_idx = arc.from;
 
-                    // P attribute: custom comparison program overrides mtime
-                    if let Some(ref prog) = arc.prog {
-                        let target = &graph.nodes[idx.0].name;
-                        let prereq = &graph.nodes[prereq_idx.0].name;
-                        let status = std::process::Command::new("sh")
-                            .arg("-c")
-                            .arg(format!("{} '{}' '{}'", prog, target, prereq))
-                            .status();
-                        return match status {
-                            Ok(s) if s.success() => false, // up to date per custom check
-                            _ => true, // stale (program failed or returned non-zero)
-                        };
-                    }
+                        // P attribute: custom comparison program overrides mtime
+                        if let Some(ref prog) = arc.prog {
+                            let target = &graph.nodes[idx.0].name;
+                            let prereq = &graph.nodes[prereq_idx.0].name;
+                            let status = std::process::Command::new("sh")
+                                .arg("-c")
+                                .arg(format!("{} '{}' '{}'", prog, target, prereq))
+                                .status();
+                            return match status {
+                                Ok(s) if s.success() => false, // up to date per custom check
+                                _ => true, // stale (program failed or returned non-zero)
+                            };
+                        }
 
-                    let prereq_eff = effective_mtime(graph, prereq_idx, force_intermediates);
-                    match prereq_eff {
-                        Some(pmtime) => pmtime > mtime,
-                        None => true, // prereq doesn't exist → target is stale
-                    }
-                })
+                        let prereq_eff = effective_mtime(graph, prereq_idx, force_intermediates);
+                        match prereq_eff {
+                            Some(pmtime) => pmtime > mtime,
+                            None => true, // prereq doesn't exist → target is stale
+                        }
+                    })
+            }
         }
     };
 

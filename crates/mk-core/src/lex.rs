@@ -211,9 +211,7 @@ impl Lexer {
 
                 // ---- close brace — exit ${…} nesting ----
                 '}' => {
-                    if brace_depth > 0 {
-                        brace_depth -= 1;
-                    }
+                    brace_depth = brace_depth.saturating_sub(1);
                     word.push('}');
                 }
 

@@ -39,7 +39,7 @@ pub struct Recipe {
 ///
 /// These correspond to CLI flags: -n (no-exec), -e (explain),
 /// -t (touch), -s (silent).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct RecipeOptions {
     /// -n flag: print recipes but don't execute.
     pub no_exec: bool,
@@ -49,17 +49,6 @@ pub struct RecipeOptions {
     pub touch: bool,
     /// -s flag: silent — don't print recipes (like Q attribute).
     pub silent: bool,
-}
-
-impl Default for RecipeOptions {
-    fn default() -> Self {
-        Self {
-            no_exec: false,
-            explain: false,
-            touch: false,
-            silent: false,
-        }
-    }
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────

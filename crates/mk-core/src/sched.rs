@@ -17,7 +17,7 @@ use crate::graph::{Graph, NodeIndex, stale_nodes};
 use crate::recipe::{Recipe, RecipeOptions, run as run_recipe};
 use crate::shell::{Shell};
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 
 // ── Outcome ────────────────────────────────────────────────────────────────
@@ -130,7 +130,7 @@ fn build_recipe(
     graph: &Graph,
     node_idx: NodeIndex,
     rule: &ResolvedRule,
-    working_dir: &PathBuf,
+    working_dir: &Path,
     env: &HashMap<String, String>,
 ) -> Recipe {
     let node = &graph.nodes[node_idx.0];
@@ -161,7 +161,7 @@ fn build_recipe(
         target: node.name.clone(),
         prereqs,
         script: rule.recipe.clone(),
-        working_dir: working_dir.clone(),
+        working_dir: working_dir.to_path_buf(),
         env: env.clone(),
         attributes: rule.attributes,
         stem,
@@ -179,7 +179,7 @@ pub fn execute(
     graph: &mut Graph,
     rules: &HashMap<String, ResolvedRule>,
     shell: &dyn Shell,
-    working_dir: &PathBuf,
+    working_dir: &Path,
     env: &HashMap<String, String>,
     opts: &SchedOptions,
 ) -> Result<BuildOutcome, SchedError> {
@@ -324,13 +324,14 @@ pub fn execute(
 /// Each thread pops a node, executes its recipe, then unblocks dependents
 /// by decrementing their pending prerequisite count. When a dependent's
 /// count reaches zero, it's added to the ready queue.
+#[allow(clippy::too_many_arguments)]
 fn run_parallel(
     graph: &mut Graph,
     sorted: &[NodeIndex],
     stale_set: &HashSet<usize>,
     rules: &HashMap<String, ResolvedRule>,
     shell: &dyn Shell,
-    working_dir: &PathBuf,
+    working_dir: &Path,
     env: &HashMap<String, String>,
     opts: &SchedOptions,
     nproc: usize,

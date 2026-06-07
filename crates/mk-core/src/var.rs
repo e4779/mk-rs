@@ -139,7 +139,7 @@ impl Scope {
             || self
                 .parent
                 .as_ref()
-                .map_or(false, |p| p.contains(name))
+                .is_some_and(|p| p.contains(name))
     }
 
     /// Iterate over all variables visible from this scope (including parents).
@@ -379,10 +379,6 @@ pub fn import_env(scope: &mut Scope) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn mk_scope() -> Scope {
-        builtin_scope()
-    }
 
     #[test]
     fn set_and_get() {
