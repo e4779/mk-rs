@@ -869,41 +869,95 @@ mkfile:
 
 ## 5. Implementation phases
 
-### Phase 1: Core parser + serial execution (MVP)
+> See `TRACEABILITY.md` for the full F-xxx → module → phase mapping.
 
-**Goal:** Parse mkfiles, build DAG, execute recipes sequentially, produce correct outputs. This is a standalone build tool that can replace `plan9port mk` for single-threaded use.
+### Phase overview
 
-**Deliverables:**
+| Phase | Features | Effort | What you can do after |
+|-------|:---:|--------|-----------------------|
+| **1a** — Core MVP | 22 | ~2 weeks | Build a C program from explicit rules |
+| **1b** — Variables & includes | 12 | ~1.5 weeks | Multi-file projects with `< file` includes |
+| **2** — Metarules & parallel | 22 | ~2.5 weeks | `%.o: %.c` patterns, NPROC parallel builds |
+| **3** — Aggregates & polish | 10 | ~2 weeks | Full plan9port mk compatibility |
+| **Deferred** — Plan 9 specifics | 4 | — | `$O`, `membername`, stdout-as-mkfile |
+
+### Phase 1a: Core parser + serial execution (REAL MVP)
+
+**Goal:** Parse simple mkfiles, build DAG from concrete rules only, execute recipes sequentially with sh. This is the smallest thing that could possibly work — you can build a C program from an explicit mkfile.
+
+**Estimated effort:** ~2 weeks (one person, part-time)
+
+**Features:** 22 specs (F-001..F-003, F-006, F-008..F-011, F-014..F-016, F-018, F-020..F-021, F-025, F-040..F-042, F-045, F-059, F-064..F-065, F-067..F-068)
 
 | Module | Scope |
 |--------|-------|
-| `lex` | Full tokenizer: words, colons, equals, includes, indents, backticks, comments, sh/rc escaped-newline modes |
-| `parse` | Rules, assignments, includes, attributes (V, Q, N), recipes. **No** metarules (`%`, `&`, `R:`) yet |
-| `graph` | DAG from concrete rules only (no metarule application), transitive closure, staleness check (mtime), cycle detection |
-| `var` | `$VAR`, `${VAR}`, `${VAR:pat=sub}`, `$$`, undefined → empty, environment variable import |
-| `shell` | `Shell` trait defined in mk-core, `ShShell` in mk-shell using `duct`. Recipe execution works |
-| `sched` | Sequential execution only (NPROC=1, single-threaded). Full job queue structure, but `run()` dispatches one at a time |
-| `attr` | Full attribute set parsing + checking methods. Only V, Q, N, E are *tested* in Phase 1 |
-| `archive` | Stubbed out — `parse_archive_ref()` exists, but no auto-rule generation |
-| `include` | `< file` only (recursive parsing). No `<| command` yet |
-| CLI | `clap` derive: `-f mkfile`, `-n` (no-exec), `-e` (explain), `-t` (touch), `-a` (all targets). Single target argument. `$MKSHELL` support |
+| `lex` | Tokenizer: words, colons, equals, indents, comments, escaped newlines (sh mode only). **No** backticks, **no** `<` include tokens yet |
+| `parse` | Rules (single target), assignments, attributes (V, Q, N), recipes. **No** metarules, **no** includes, **no** multi-target rules |
+| `graph` | DAG from concrete rules. Transitive closure (follow prereqs). Staleness via `mtime`. Cycle detection. Virtual targets |
+| `var` | `$VAR`, `${VAR}`, `$$`. Environment import. Precedence (cmdline > file > env > builtin). **No** namelists, **no** substitution patterns |
+| `shell` | `Shell` trait in mk-core. `ShShell` via `duct`. Recipe fed to stdin |
+| `recipe` | First-char elision. Environment export of user vars. Error code → MkError |
+| `sched` | Serial only (NPROC=1). Single job dispatch, synchronous `wait()` |
+| `attr` | V, Q, N parsing. Bitflags struct |
+| `cli` | `clap` derive: `-f`, `-n`, `-e`, `-t`, `-a`. Targets as positional args. `--version` |
 
 **Tests:**
-- All unit tests for lex, parse, graph, var
-- Integration: `testdata/hello` (C compilation), `testdata/library` (rules-only, no metarules — explicitly list each .o)
-- Property: parse roundtrip
+- Unit: lex (token roundtrip), parse (rule/assign), graph (3-node chain, cycle detection), var (expansion), attr (bitflags)
+- Integration: `testdata/hello` — single C file → binary
+- Integration: `testdata/hello-rebuild` — touch source → rebuild; no changes → up-to-date
 
-**Success criteria:**
-- `cargo run -- -f testdata/hello/mkfile hello` builds `hello` binary
-- Changing `hello.c` → rebuilds; changing nothing → "hello is up to date"
-- `-n` flag prints recipes without executing
-- Error on cycle, error on missing mkfile, error on recipe failure
+**Exit criteria:**
+- `cargo run -- -f mkfile hello` builds a C program
+- Changing source → rebuilds target
+- Unchanged source → "hello is up to date"
+- Cycle in mkfile → error with file:line
+- Missing prerequisite and no rule → error
+- `-n` prints recipes without executing
+- All unit tests green (target: >90% coverage on lex, parse, graph)
+
+---
+
+### Phase 1b: Variables, includes, basic attributes
+
+**Goal:** Round out the core: recipe-time variables, `< file` includes, missing intermediate optimization, and CLI flags that don't require parallelism.
+
+**Estimated effort:** ~1.5 weeks
+
+**Features:** 12 specs (F-013, F-017, F-022..F-024, F-026, F-031, F-033..F-034, F-038, F-046..F-049, F-051, F-062, F-069)
+
+| Module | Scope |
+|--------|-------|
+| `lex` | Backtick tokens (`` `cmd` ``). `<` and `|` tokens for includes |
+| `parse` | Multi-target rules. Include directives (`< file`). Recipe-less rules (prereq merging) |
+| `graph` | Missing intermediate optimization. `-i` flag support. Prerequisite merging from multiple rules |
+| `var` | `$target`, `$prereq`, `$pid` builtins. Short-circuit eval (parse vs execution time). `$newprereq` |
+| `include` | `< file` with recursive parsing. Circular include detection. Include stack for errors |
+| `sched` | `-k` keep-going. `-t` touch mode. `-a` force rebuild |
+| `attr` | E, U attribute support |
+| `cli` | `-k`, `-i`, `-w` flags |
+
+**Tests:**
+- Unit: include (recursive, circular), var ($target/$prereq in recipe context), parse (multi-target)
+- Integration: `testdata/includes` — nested mkfiles, variable scoping
+- Integration: `testdata/intermediates` — missing .o file, pretend-timestamp optimization
+
+**Exit criteria:**
+- `< subdir/mkfile` includes and merges rules correctly
+- Circular include → error with chain printed
+- `$target` and `$prereq` expand to correct values in recipe
+- Missing intermediate .o is skipped if dependents are up to date
+- `-k` continues after a recipe failure
+- `-t` touches targets without running recipes
 
 ---
 
 ### Phase 2: Parallelism + metarules + full variables
 
 **Goal:** Achieve feature parity with plan9port mk's core functionality: parallel builds, pattern metarules, and all recipe-time variables.
+
+**Estimated effort:** ~2.5 weeks
+
+**Features:** 22 specs (F-004..F-005, F-007, F-019, F-027, F-029, F-035..F-037, F-039, F-044, F-052..F-056, F-058, F-060..F-061, F-063, F-066)
 
 **Deliverables:**
 
@@ -924,17 +978,24 @@ mkfile:
 - Integration: `testdata/library` with metarules (%.o: %.c)
 - Integration: `testdata/regex` with R: metarules
 
-**Success criteria:**
-- `NPROC=4` builds diamond DAG with demonstrable parallelism (total time < sum of individual recipe times)
+**Exit criteria:**
+- `NPROC=4` builds diamond DAG with demonstrable parallelism (wall time < sum of recipe times)
 - `%` and `R:` metarules work identically to plan9port mk
 - `$stem`, `$target`, `$prereq` expand correctly inside recipes
 - `-i` flag builds missing intermediate targets automatically
+- `<| command` executes command and includes its stdout as mkfile
+- `${VAR:%.c=%.o}` namelist transforms work
+- All plan9port mk regression tests (basic rule set) pass
 
 ---
 
 ### Phase 3: Includes + dynamic features + polish
 
 **Goal:** Full feature parity with plan9port mk, plus Rust-native improvements. Production-ready.
+
+**Estimated effort:** ~2 weeks
+
+**Features:** 10 specs (F-024, F-028, F-030, F-032, F-043, F-050, F-058)
 
 **Deliverables:**
 
@@ -948,19 +1009,15 @@ mkfile:
 | CLI | All flags: `-d` (debug), `-k` (keep-going), `-s` (silent), `-w` (what-if), `-C dir` (chdir). `--color auto/always/never`. `--json` for machine-readable output. `--version`, `--help` |
 | Docs | Man page (`mk.1.md`). README with quick-start. Integration test READMEs. API docs for mk-core |
 
-**Tests:**
-- Include tests: `testdata/includes` — nested includes, variable scoping, circular include detection
-- Dynamic includes: recipe generates prereq list on stdout → mkfile reprocesses it
-- Archive tests: `testdata/archive` — lib.a(member.o) auto-rules
-- Integration: full C project build with multiple subdirectories, includes, metarules
-- Benchmark: comparison against plan9port mk on equivalent mkfiles
-
-**Success criteria:**
+**Exit criteria:**
 - Passes all plan9port mk regression tests (ported to Rust test format)
-- `cargo build` to install mk-rust on any Linux/macOS system
+- `cargo install --path crates/mk-cli` installs on Linux/macOS
 - Man page in `man/man1/mk.1`
-- `< 2 seconds to build a 100-target project with no changes (instant staleness check)
+- `< 2 seconds to check 100-target project with no changes
 - Zero panics in normal operation — all errors propagate as `Result`
+- `lib(member)` syntax generates archive rules automatically
+- `-d[egp]` debug output matches plan9port format
+- Recipe stdout can feed back as mkfile input (dynamic includes)
 
 ---
 
