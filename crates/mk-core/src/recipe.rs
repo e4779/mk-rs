@@ -207,6 +207,10 @@ fn touch_target(target: &str) -> Result<(), RecipeError> {
             }
         }
         std::fs::write(path, "").map_err(RecipeError::Io)?;
+    } else {
+        // Update modification time by rewriting the file with its own content
+        let content = std::fs::read(path).map_err(RecipeError::Io)?;
+        std::fs::write(path, content).map_err(RecipeError::Io)?;
     }
     Ok(())
 }

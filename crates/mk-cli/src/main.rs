@@ -38,7 +38,7 @@ struct Cli {
     #[arg(short = 't')]
     touch: bool,
 
-    /// Assume all targets are out of date (stub — Phase 1b)
+    /// Assume all targets are out of date
     #[arg(short = 'a')]
     all: bool,
 
@@ -46,15 +46,15 @@ struct Cli {
     #[arg(short = 'k')]
     keep_going: bool,
 
-    /// Ignore missing intermediate targets (stub — Phase 1b)
+    /// Force missing intermediate targets to be built (stub — Phase 1b)
     #[arg(short = 'i')]
     force_intermediates: bool,
 
     /// Silent mode: don't print recipes before execution
     #[arg(short = 's')]
-    sequential: bool,
+    silent: bool,
 
-    /// Debug output: p (parse), g (graph), e (execution) (stub — Phase 1b)
+    /// Debug output: p (parse), g (graph), e (execution) (stub — Phase 2)
     #[arg(short = 'd')]
     debug: Option<String>,
 
@@ -80,8 +80,7 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
-    // Stub flags — parsed but not yet implemented
-    let _ = &cli.all;
+    // Stub flags (parsed, not yet implemented)
     let _ = &cli.force_intermediates;
     let _ = &cli.debug;
     let _ = &cli.whatif;
@@ -159,14 +158,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         no_exec: cli.no_exec,
         explain: cli.explain,
         touch: cli.touch,
-        silent: cli.sequential,
+        silent: cli.silent,
+        all: cli.all,
     };
 
     // Build environment from variable scope
-    let env: HashMap<String, String> = scope
-        .iter()
-        .map(|(k, v)| (k.to_string(), v.to_string()))
-        .collect();
+    let env = scope.export();
 
     let working_dir = std::env::current_dir()?;
 

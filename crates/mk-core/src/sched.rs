@@ -47,6 +47,8 @@ pub struct SchedOptions {
     pub touch: bool,
     /// -s: silent (don't print recipes)
     pub silent: bool,
+    /// -a: assume all targets are out of date
+    pub all: bool,
 }
 
 impl Default for SchedOptions {
@@ -57,6 +59,7 @@ impl Default for SchedOptions {
             explain: false,
             touch: false,
             silent: false,
+            all: false,
         }
     }
 }
@@ -171,6 +174,14 @@ pub fn execute(
         }
     }
 
+    // -a: assume all targets are out of date
+    if opts.all {
+        stale_set.clear();
+        for node_idx in &sorted {
+            stale_set.insert(node_idx.0);
+        }
+    }
+
     // 3. If no stale nodes, everything is unchanged
     if stale_set.is_empty() {
         let unchanged: Vec<String> = sorted
@@ -222,13 +233,9 @@ pub fn execute(
         let rule = match rules.get(&node.name) {
             Some(r) => r,
             None => {
-                // No rule and no recipe — can't build. Should not happen
-                // since build_graph validates targets have rules.
-                if opts.keep_going {
-                    failed.push((node.name.clone(), "no rule to build".into()));
-                    continue;
-                }
-                return Err(SchedError::BuildFailed);
+                // No rule for this target — it's a leaf/source file, skip
+                unchanged.push(node.name.clone());
+                continue;
             }
         };
 
