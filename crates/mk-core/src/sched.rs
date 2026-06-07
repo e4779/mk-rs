@@ -15,7 +15,7 @@ use crate::attr::Attributes;
 use crate::error::SchedError;
 use crate::graph::{Graph, NodeIndex, stale_nodes};
 use crate::recipe::{Recipe, RecipeOptions, run as run_recipe};
-use crate::shell::{Shell, ShellResult};
+use crate::shell::{Shell};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 

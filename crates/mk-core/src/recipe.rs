@@ -112,7 +112,8 @@ pub fn run(
     shell: &dyn Shell,
     opts: &RecipeOptions,
 ) -> Result<ShellResult, RecipeError> {
-    let script = elide_first_char(&recipe.script);
+    // Parser already strips indent — recipe text is already elided.
+    let script = recipe.script.clone();
 
     // ── Quiet check ────────────────────────────────────────────────────
     let quiet = opts.silent || recipe.attributes.is_quiet();
