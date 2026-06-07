@@ -20,8 +20,8 @@
 | F-001 | Rule definition (target: prereqs + recipe) | `parse` | 1a | ✓ |
 | F-011 | Comments: `#` to newline | `lex` | 1a | ✓ |
 | F-012 | Line continuation: `\<newline>` | `lex` | 1a | ✓ |
-| F-013 | Includes: `< file` | `include`, `parse` | 1b | — |
-| F-014 | First target as default | `graph`, `cli` | 1a | ◐ (graph done) |
+| F-013 | Includes: `< file` | `include`, `parse` | 1b | ◐ (include done) |
+| F-014 | First target as default | `graph`, `cli` | 1a | ✓ |
 | F-045 | Rule header evaluated at parse time | `parse`, `var` | 1a | ✓ |
 | F-063 | Backquote command substitution in mkfile | `lex`, `var` | 1b | ◐ (lex done) |
 | F-066 | Glob expansion in assignments | `var` | 2 | — |
@@ -80,13 +80,13 @@
 |----|---------|--------|-------|--------|
 | F-015 | Recipe as shell script block | `recipe`, `shell` | 1a | ✓ |
 | F-016 | First-char elision in recipes | `recipe` | 1a | ✓ |
-| F-033 | `$target` variable | `var`, `recipe` | 1b | — |
-| F-034 | `$prereq` variable | `var`, `recipe` | 1b | — |
+| F-033 | `$target` variable | `var`, `recipe` | 1b | ✓ |
+| F-034 | `$prereq` variable | `var`, `recipe` | 1b | ✓ |
 | F-035 | `$stem` variable | `var`, `recipe` | 2 | — |
 | F-036 | `$alltarget` variable | `var`, `recipe` | 2 | — |
 | F-031 | `$newprereq` variable | `var`, `recipe` | 2 | — |
 | F-032 | `$newmember` variable | `var`, `recipe` | 3 | — |
-| F-038 | `$pid` variable | `var`, `recipe` | 1b | — |
+| F-038 | `$pid` variable | `var`, `recipe` | 1b | ✓ |
 | F-053 | `$MKSHELL` variable | `shell`, `cli` | 2 | — |
 | F-054 | `$MKFLAGS` variable | `var` | 2 | — |
 | F-055 | `$MKARGS` variable | `var` | 2 | — |
@@ -138,7 +138,7 @@
 | Phase | Progress | Feature count | What it covers |
 |-------|:---:|:---:|---|
 | **1a** | ████████ 22/22 ✅ | 22 | Parser, DAG, serial exec, core variables, attrs, scheduling |
-| **1b** | █░░░░░░░ 2/12 | 12 | Include `< file`, prereq/target vars, missing intermediates, E/U attrs |
+| **1b** | ███░░░░░ 5/12 | 12 | Include `< file`, prereq/target vars, missing intermediates, E/U attrs |
 | **2** | ░░░░░░░░ 0/22 | 22 | %/&/R metarules, transitive closure, pruning, NPROC parallel |
 | **3** | ░░░░░░░░ 0/10 | 10 | Aggregates, `<| cmd`, P attribute, dynamic mkfile, -d debug |
 | **P3** | ░░░░░░░░ 0/4 | 4 | Plan 9 specifics ($O, membername) |
