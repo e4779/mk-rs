@@ -103,6 +103,30 @@ fn get_mtime(path: &str) -> Option<std::time::SystemTime> {
     std::fs::metadata(path).ok()?.modified().ok()
 }
 
+// ── Metarule matching ────────────────────────────────────────────────────
+
+/// Try to match a target name against a metarule pattern.
+/// Returns Some(stem) if matched, None otherwise.
+///
+/// Patterns use `%` as a wildcard: `%.o` matches `foo.o` with stem `foo`,
+/// `lib%.a` matches `libfoo.a` with stem `foo`.
+fn match_metarule(target: &str, pattern: &str) -> Option<String> {
+    if let Some(pos) = pattern.find('%') {
+        let prefix = &pattern[..pos];
+        let suffix = &pattern[pos + 1..];
+
+        if target.starts_with(prefix) && target.ends_with(suffix) {
+            let stem_start = prefix.len();
+            let stem_end = target.len() - suffix.len();
+            if stem_start <= stem_end {
+                let stem = target[stem_start..stem_end].to_string();
+                return Some(stem);
+            }
+        }
+    }
+    None
+}
+
 // ── Graph builder ─────────────────────────────────────────────────────────
 
 /// Build a DAG from parsed statements for the given target names.
@@ -122,12 +146,17 @@ pub fn build_graph(stmts: &[Stmt], target_names: &[String]) -> Result<Graph, Gra
         })
         .collect();
 
-    if rules.is_empty() {
+    let metarules: Vec<&Rule> = stmts
+        .iter()
+        .filter_map(|stmt| match stmt {
+            Stmt::Rule(r) if r.is_metarule && !r.is_regex => Some(r),
+            _ => None,
+        })
+        .collect();
+
+    if rules.is_empty() && target_names.is_empty() {
         return Err(GraphError::NoRule {
-            target: target_names
-                .first()
-                .cloned()
-                .unwrap_or_else(|| "(none)".into()),
+            target: "(none)".into(),
         });
     }
 
@@ -161,6 +190,7 @@ pub fn build_graph(stmts: &[Stmt], target_names: &[String]) -> Result<Graph, Gra
     fn build_node<'a>(
         graph: &mut Graph,
         rules_by_target: &HashMap<&str, Vec<&'a Rule>>,
+        metarules: &[&'a Rule],
         name_to_index: &mut HashMap<String, NodeIndex>,
         name: &str,
     ) -> NodeIndex {
@@ -190,7 +220,7 @@ pub fn build_graph(stmts: &[Stmt], target_names: &[String]) -> Result<Graph, Gra
             // Phase 1a: use first rule's prereqs only
             let rule = rules[0];
             for prereq in &rule.prereqs {
-                let prereq_idx = build_node(graph, rules_by_target, name_to_index, prereq);
+                let prereq_idx = build_node(graph, rules_by_target, metarules, name_to_index, prereq);
                 let arc_idx = ArcIndex(graph.arcs.len());
                 graph.nodes[idx.0].arcs_in.push(arc_idx);
                 graph.arcs.push(Arc {
@@ -200,20 +230,50 @@ pub fn build_graph(stmts: &[Stmt], target_names: &[String]) -> Result<Graph, Gra
                     is_meta: false,
                 });
             }
+        } else {
+            // No concrete rule — try metarules
+            for metarule in metarules {
+                if let Some(stem) = match_metarule(name, &metarule.targets[0]) {
+                    // Apply metarule attributes to the target
+                    if metarule.attributes.is_virtual() {
+                        graph.nodes[idx.0].flags.set(NodeFlags::VIRTUAL);
+                    }
+
+                    // Substitute % in prereqs with stem
+                    for prereq in &metarule.prereqs {
+                        let prereq = prereq.replace('%', &stem);
+                        let prereq_idx = build_node(
+                            graph, rules_by_target, metarules, name_to_index, &prereq,
+                        );
+                        let arc_idx = ArcIndex(graph.arcs.len());
+                        graph.nodes[idx.0].arcs_in.push(arc_idx);
+                        graph.arcs.push(Arc {
+                            from: prereq_idx,
+                            to: idx,
+                            stem: stem.clone(),
+                            is_meta: true,
+                        });
+                    }
+                    break;
+                }
+            }
         }
 
         idx
     }
 
     for target in &targets {
-        let idx = build_node(&mut graph, &rules_by_target, &mut name_to_index, target);
+        let idx = build_node(&mut graph, &rules_by_target, &metarules, &mut name_to_index, target);
         graph.targets.push(idx);
     }
 
     // 4. Validate requested targets (must have a rule or exist on fs)
     for &target_idx in &graph.targets {
         let node = &graph.nodes[target_idx.0];
-        let has_rule = rules_by_target.contains_key(node.name.as_str());
+        let has_rule = rules_by_target.contains_key(node.name.as_str())
+            || metarules
+                .iter()
+                .any(|mr| match_metarule(&node.name, &mr.targets[0]).is_some());
         if !has_rule && node.mtime.is_none() {
             return Err(GraphError::NoRule {
                 target: node.name.clone(),
@@ -597,5 +657,78 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── Metarules ─────────────────────────────────────────────────────
+
+    #[test]
+    fn metarule_match_percent_o() {
+        let input = "%.o: %.c\n\tcc -c $stem.c\nprog: hello.o\n";
+        let tokens = tokenize(input, ShellMode::Sh).unwrap();
+        let stmts = parse::parse(&tokens).unwrap();
+        let g = build_graph(&stmts, &["prog".into()]).unwrap();
+        // Should have nodes: prog, hello.o, hello.c (3 nodes)
+        assert_eq!(g.nodes.len(), 3);
+        // Find hello.o node
+        let hello_o = g.nodes.iter().position(|n| n.name == "hello.o").unwrap();
+        assert_eq!(g.nodes[hello_o].arcs_in.len(), 1);
+        let arc = &g.arcs[g.nodes[hello_o].arcs_in[0].0];
+        assert!(arc.is_meta);
+        assert_eq!(arc.stem, "hello");
+        // The prereq should be hello.c
+        let prereq_idx = arc.from;
+        assert_eq!(g.nodes[prereq_idx.0].name, "hello.c");
+    }
+
+    #[test]
+    fn metarule_match_lib_percent_a() {
+        let input = "lib%.a: lib%.o\n";
+        let g = graph_from_str(input, &["libfoo.a"]).unwrap();
+        assert_eq!(g.nodes.len(), 2);
+        let libfoo_a = g.nodes.iter().position(|n| n.name == "libfoo.a").unwrap();
+        let arc = &g.arcs[g.nodes[libfoo_a].arcs_in[0].0];
+        assert!(arc.is_meta);
+        assert_eq!(arc.stem, "foo");
+        let prereq_idx = arc.from;
+        assert_eq!(g.nodes[prereq_idx.0].name, "libfoo.o");
+    }
+
+    #[test]
+    fn metarule_concrete_takes_priority() {
+        // Concrete rule for hello.o should override metarule %
+        let input = "%.o: %.c\n\tcc -c $stem.c\nhello.o: hello.s\n";
+        let g = graph_from_str(input, &["hello.o"]).unwrap();
+        // hello.o should depend on hello.s (concrete), not hello.c (metarule)
+        let hello_o = g.nodes.iter().position(|n| n.name == "hello.o").unwrap();
+        assert_eq!(g.nodes[hello_o].arcs_in.len(), 1);
+        let arc = &g.arcs[g.nodes[hello_o].arcs_in[0].0];
+        assert!(!arc.is_meta);
+        assert_eq!(g.nodes[arc.from.0].name, "hello.s");
+    }
+
+    #[test]
+    fn metarule_no_match() {
+        // foo.txt doesn't match %.o pattern
+        let input = "%.o: %.c\n";
+        let result = graph_from_str(input, &["foo.txt"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn metarule_first_match_wins() {
+        // Two metarules for the same pattern — first one wins
+        let input = "%.o: %.c\n%.o: %.s\n";
+        let g = graph_from_str(input, &["hello.o"]).unwrap();
+        let hello_o = g.nodes.iter().position(|n| n.name == "hello.o").unwrap();
+        let arc = &g.arcs[g.nodes[hello_o].arcs_in[0].0];
+        assert_eq!(g.nodes[arc.from.0].name, "hello.c");
+    }
+
+    #[test]
+    fn metarule_with_virtual_attr() {
+        let input = "%.o:V: %.c\n\tcc -c $stem.c\n";
+        let g = graph_from_str(input, &["hello.o"]).unwrap();
+        let hello_o = g.nodes.iter().position(|n| n.name == "hello.o").unwrap();
+        assert!(g.nodes[hello_o].flags.is_virtual());
     }
 }
