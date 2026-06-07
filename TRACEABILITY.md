@@ -37,8 +37,8 @@
 | F-040 | Environment variable import | `var` | 1a | ✓ |
 | F-041 | Variable precedence (cmdline > file > env > builtin) | `var` | 1a | ✓ |
 | F-042 | Command-line assignment `mk VAR=value` | `cli`, `var` | 1a | — |
-| F-046 | Short-circuit variable eval (recipe execution time) | `var` | 1b | — |
-| F-064 | Variables exported to recipe environment | `var`, `recipe` | 1a | — |
+| F-046 | Short-circuit variable eval (recipe execution time) | `var` | 1b | ✓ |
+| F-064 | Variables exported to recipe environment | `var`, `recipe` | 1a | ✓ |
 
 ## Meta-rules
 
@@ -103,7 +103,7 @@
 | F-026 | U attribute (unconditionally updated) | `attr`, `graph` | 1b | ◐ (attr done) |
 | F-027 | n attribute (non-virtual-only metarule) | `attr`, `graph` | 2 | ◐ (attr done) |
 | F-028 | P attribute (custom comparison) | `attr`, `graph` | 3 | ◐ (attr done) |
-| F-068 | Virtual target timestamp initialization | `attr`, `graph` | 1a | — |
+| F-068 | Virtual target timestamp initialization | `attr`, `graph` | 1a | ✓ |
 
 ## CLI
 
@@ -138,7 +138,7 @@
 | Phase | Progress | Feature count | What it covers |
 |-------|:---:|:---:|---|
 | **1a** | ████████ 22/22 ✅ | 22 | Parser, DAG, serial exec, core variables, attrs, scheduling |
-| **1b** | ███████░ 10/12 | 12 | Include `< file`, prereq/target vars, missing intermediates, flags |
+| **1b** | ████████ 12/12 ✅ | 12 | Includes, recipe-time vars, missing intermediates, CLI flags |
 | **2** | ░░░░░░░░ 0/22 | 22 | %/&/R metarules, transitive closure, pruning, NPROC parallel |
 | **3** | ░░░░░░░░ 0/10 | 10 | Aggregates, `<| cmd`, P attribute, dynamic mkfile, -d debug |
 | **P3** | ░░░░░░░░ 0/4 | 4 | Plan 9 specifics ($O, membername) |
