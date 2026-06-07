@@ -893,15 +893,16 @@ mkfile:
 
 | Module | Scope |
 |--------|-------|
-| `lex` | Tokenizer: words, colons, equals, indents, comments, escaped newlines (sh mode only). **No** backticks, **no** `<` include tokens yet |
-| `parse` | Rules (single target), assignments, attributes (V, Q, N), recipes. **No** metarules, **no** includes, **no** multi-target rules |
-| `graph` | DAG from concrete rules. Transitive closure (follow prereqs). Staleness via `mtime`. Cycle detection. Virtual targets |
-| `var` | `$VAR`, `${VAR}`, `$$`. Environment import. Precedence (cmdline > file > env > builtin). **No** namelists, **no** substitution patterns |
-| `shell` | `Shell` trait in mk-core. `ShShell` via `duct`. Recipe fed to stdin |
-| `recipe` | First-char elision. Environment export of user vars. Error code → MkError |
-| `sched` | Serial only (NPROC=1). Single job dispatch, synchronous `wait()` |
-| `attr` | V, Q, N parsing. Bitflags struct |
-| `cli` | `clap` derive: `-f`, `-n`, `-e`, `-t`, `-a`. Targets as positional args. `--version` |
+| `lex` | Tokenizer: words, colons, equals, indents, comments, escaped newlines (sh+rc), backticks, `<`/`|` include tokens, single/double quotes |
+| `parse` | Rules (single+multi target), assignments, attributes (all 9: V/Q/N/U/D/E/P/R/n), recipes, metarule detection (is_metarule/is_regex flags). **No** include resolution yet (parser sees `<` but doesn't call include module) |
+| `graph` | DAG from concrete rules. Transitive closure. Staleness via `mtime`. Cycle detection. Virtual targets. Missing intermediate optimization. **No** metarule application, **no** pruning |
+| `var` | `$VAR`, `${VAR}`, `$$`. Environment import. Precedence (cmdline > file > env > builtin). Built-in defaults (CC, NPROC, etc.). `Scope::export()`. Recipe-time injection ($target, $prereq, $pid). **No** namelists, **no** substitution patterns, **no** $stem |
+| `shell` | `Shell` trait in mk-core. `ShShell` in mk-shell using `std::process::Command` with `/bin/sh -ec`. `find_unescaped()`, `quote()`. **No** RcShell, **no** MKSHELL selection |
+| `recipe` | First-char elision (utility function, not called by run() — parser handles it). Q/E/D attribute support. -n/-e/-t/-s flags. `$target`/`$prereq`/`$pid` injection. `touch_target()` |
+| `sched` | Serial execution via topological sort (post-order DFS). SchedOptions: keep_going, no_exec, explain, touch, silent, all, force_intermediates. `ResolvedRule` type. **No** NPROC parallelism |
+| `attr` | All 9 attributes: V/Q/N/U/D/E/P/R/n. Bitflags with `is_*` methods. `parse_attributes()`. ATTR_HELP |
+| `include` | `IncludeContext` with chain-based circular detection. `include_file()`. **Not yet wired into parser** |
+| `cli` | clap derive: -f, -n, -e, -t, -a, -k, -i, -s, -d, -w, -C. Reads mkfile, builds scope, executes. Scope::export() for env. Thin wrapper |
 
 **Tests:**
 - Unit: lex (token roundtrip), parse (rule/assign), graph (3-node chain, cycle detection), var (expansion), attr (bitflags)
@@ -930,13 +931,13 @@ mkfile:
 | Module | Scope |
 |--------|-------|
 | `lex` | Backtick tokens (`` `cmd` ``). `<` and `|` tokens for includes |
-| `parse` | Multi-target rules. Include directives (`< file`). Recipe-less rules (prereq merging) |
-| `graph` | Missing intermediate optimization. `-i` flag support. Prerequisite merging from multiple rules |
-| `var` | `$target`, `$prereq`, `$pid` builtins. Short-circuit eval (parse vs execution time). `$newprereq` |
-| `include` | `< file` with recursive parsing. Circular include detection. Include stack for errors |
-| `sched` | `-k` keep-going. `-t` touch mode. `-a` force rebuild |
-| `attr` | E, U attribute support |
-| `cli` | `-k`, `-i`, `-w` flags |
+| `parse` | Multi-target rules. Include directive tokens recognized. Recipe-less rules (prereq merging). **Include resolution still pending** |
+| `graph` | Missing intermediate optimization. `-i` flag via `force_intermediates`. `stale_nodes()` with optional pretend timestamps |
+| `var` | `$target`, `$prereq`, `$pid` builtins (injected at recipe execution). Short-circuit eval (parse vs execution time). `Scope::export()` |
+| `include` | `< file` with recursive parsing. Circular include detection via chain tracking. **Not yet wired into parser** |
+| `sched` | `-k` keep-going. `-t` touch mode. `-a` force rebuild (`SchedOptions.all`). Leaf nodes without rules skipped gracefully |
+| `recipe` | `touch_target()` rewrites file to update mtime. `-t`/`-n`/`-e` flags |
+| `cli` | All flags wired: `-k`, `-t`, `-a`, `-i`. Silent renamed from sequential. `scope.export()` |
 
 **Tests:**
 - Unit: include (recursive, circular), var ($target/$prereq in recipe context), parse (multi-target)
@@ -966,8 +967,8 @@ mkfile:
 | Area | Scope |
 |------|-------|
 | `sched` | NPROC-based worker pool (crossbeam channels + threads). Multiple jobs run concurrently. Semaphore for backpressure. Exclusive (`E`) job support. Progress echo (`target: ...`) |
-| `parse` | `%` metarules (single `%` match), `&` metarules (ampersand matchers), `R:` regex metarules |
-| `graph` | Metarule application: for each unknown target, try `%` metarules, then `&`, then `R`. Pruning: vacuous + ambiguous edge removal. Missing intermediate handling (`-i` flag) |
+| `parse` | `%` metarules (single `%` match), `&` metarules (ampersand matchers), `R:` regex metarules. Wire `< file` includes to include module. Backtick expansion in assignments |
+| `graph` | Metarule application: for each unknown target, try `%` metarules, then `&`, then `R`. Pruning: vacuous + ambiguous edge removal |
 | `var` | `$stem`, `$target`, `$prereq`, `$newprereq`, `$alltarget`. Namelist access: `$stem(1)`, `$stem(N)`. Recipe-time variable expansion |
 | `shell` | `RcShell` in mk-shell. Shell selection via `$MKSHELL` and per-rule `S:` attribute. Proper rc env format (`\x01` separator) |
 | CLI | `-p N` / `$NPROC` for parallelism. `-i` for missing intermediates. `-k` for keep-going |
@@ -1103,6 +1104,17 @@ This is inherently blocking. Async adds no benefit and adds complexity.
 | **Don't build it** | Keeps mk-rust focused. Users can script: `while inotifywait .; do mk; done`. | User ergonomics. |
 
 **Tentative answer:** **Don't build it.** mk is a build tool, not a daemon. Plan 9 mk never had this feature. Users who want watch mode can use `watchexec`, `cargo watch`, or a shell one-liner. If demand is high, a separate `mk-watch` tool using the `notify` crate is better than bloating mk-core.
+
+### 6.7 `-s` flag semantic: silent vs sequential
+
+**Conflict:** plan9port mk uses `-s` to mean "sequential" (force NPROC=1). Our implementation uses `-s` to mean "silent" (suppress recipe printing). Phase 2 parallelism makes this a real conflict.
+
+**Options:**
+1. Rename our `-s` to `-q` (quiet) and implement `-s` as sequential in Phase 2
+2. Keep `-s` as silent, use a different flag for sequential (e.g., `-j 1` or just set NPROC=1)
+3. Keep both: `-s` = sequential, silence via `Q` attribute on rules
+
+**Tentative answer:** Option 1. Rename silent to `-q` (quiet), reserve `-s` for sequential mode matching plan9port behavior. The `Q` attribute already handles per-rule silence.
 
 ---
 
@@ -1253,3 +1265,39 @@ Target `#![forbid(unsafe_code)]` on `mk-core`. The only potential need for `unsa
 ---
 
 *This plan is a living document. Decisions marked "Tentative answer" are subject to change as implementation reveals new constraints. Open questions in §6 should be resolved before reaching the relevant phase.*
+
+---
+
+## 8. Implementation Insights (post-Phase 1)
+
+### What worked well
+
+1. **Arena (Vec + indices) for DAG** — NodeIndex/ArcIndex newtypes proved clean and fast. No Rc/RefCell pain. Graph mutation is localized to build_graph() and execute(); after that, the graph is read-only.
+
+2. **Parallel sub-agents with precise prompts** — Three agents simultaneously writing lex, attr, error produced correct, compiling code in one shot. Key: each agent got exact types, exact tests, and "ONLY write this file" constraint.
+
+3. **Centralized error types** — Having all errors in error.rs with `#[from]` auto-conversions eliminated duplication. When shell.rs accidentally defined its own ShellError, the fix was trivial: `pub use crate::error::ShellError`.
+
+4. **`Scope::export()` method** — Added during implementation, not in original plan. Flattens scope chain to HashMap. Simplified CLI code significantly. Should be adopted as a pattern: add convenience methods when you find yourself repeating the same 3-line pattern twice.
+
+### What surprised us
+
+1. **Double elision bug** — Parser strips indent (by consuming Indent token), but recipe::run() also called elide_first_char(). Net result: `cc` → `c`. Root cause: unclear contract between parser and recipe module. Fix: parser owns indent stripping; recipe never elides. Lesson: document which module owns each transformation.
+
+2. **stale_nodes short-circuit** — `Iterator::any()` in check_stale() stops at first stale prereq, never visiting sibling prereqs. This caused -k tests to fail because some stale nodes were never detected. Temporary fix in sched.rs; permanent fix should be in graph.rs. Lesson: topological algorithms need full traversal, not short-circuit.
+
+3. **touch_target didn't update mtime** — Original implementation only created files if missing. `-t` flag was silently broken for existing files. Fixed by reading+rewriting file content. Lesson: stateless functions that look correct can have hidden bugs — test with existing files, not just missing ones.
+
+4. **`-s` flag semantic conflict** — plan9port's `-s` = sequential (NPROC=1). Our `-s` = silent (suppress output). When Phase 2 adds parallelism, this becomes a real conflict. Recommendation: rename our flag to `-q` (quiet) and reserve `-s` for sequential mode.
+
+### Gaps to address before Phase 2
+
+1. **Include module not wired into parser** — The `include` module exists with 14 tests, but the parser doesn't call `include_file()` when it sees `<` tokens. A parsed `< file` directive currently errors as "ExpectedColon". Phase 2 should integrate the include module into the parser.
+
+2. **Integration test fixtures needed** — We have 194 unit tests but only one manual integration test (testdata/hello). Phase 2 needs: `testdata/library/` (metarules), `testdata/includes/` (nested mkfiles), `testdata/regex/` (R: metarules).
+
+3. **The `-s`/`-q` flag cleanup** — Before adding parallelism, resolve the semantic conflict. Either rename current `-s` (silent) to `-q` (quiet), or make `-s` control sequencing (NPROC=1) and use a different mechanism for silence.
+
+4. **Recipe-time variable expansion order** — Currently $target, $prereq, $pid are injected in recipe::run(). But $stem requires graph context (metarule matching). Phase 2 must thread stem through graph → sched → recipe. The Recipe struct already has space for this.
+
+5. **The plan's Phase 1a/1b module descriptions are outdated** — They describe what we PLANNED to implement, not what we ACTUALLY implemented. E.g., lex handles backticks and `<` tokens; parse handles multi-target rules. These should be updated to match reality.
