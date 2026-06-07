@@ -87,7 +87,7 @@
 | F-031 | `$newprereq` variable | `var`, `recipe` | 2 | ✓ |
 | F-032 | `$newmember` variable | `var`, `recipe` | 3 | — |
 | F-038 | `$pid` variable | `var`, `recipe` | 1b | ✓ |
-| F-053 | `$MKSHELL` variable | `shell`, `cli` | 3 | ◐ (sh + flag parsing done, duckscript in Phase 3) |
+| F-053 | `$MKSHELL` variable | `shell`, `cli` | 3 | ◐ (sh + flag parsing done, duckscript Shell impl pending) |
 | F-054 | `$MKFLAGS` variable | `var` | 2 | ✓ |
 | F-055 | `$MKARGS` variable | `var` | 2 | ✓ |
 
@@ -142,7 +142,7 @@
 | **1a** | ████████ 22/22 ✅ | 22 | Parser, DAG, serial exec, core variables, attrs, scheduling |
 | **1b** | ████████ 12/12 ✅ | 12 | Includes, recipe-time vars, missing intermediates, CLI flags |
 | **2** | ████████ 22/22 ✅ | 22 | %/&/R metarules, NPROC parallel, namelists, pruning, includes |
-| **3** | ░░░░░░░░ 0/10 | 10 | Aggregates, `<| cmd`, P attribute, dynamic mkfile, -d debug |
+| **3** | █░░░░░░░ 2/10 | 10 | Aggregates, P attribute, -d debug, duckscript, polish |
 | **P3** | ░░░░░░░░ 0/4 | 4 | Plan 9 specifics ($O, membername) |
 
-*Completed: lex (F-011, F-012, F-063 backtick tokens), attr (F-009-010, F-023-028 parsing).*
+*Phase 3: duckscript Shell (from cargo-make research), archive aggregates, -d debug, polish.*

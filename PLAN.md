@@ -878,7 +878,7 @@ mkfile:
 | **1a** — Core MVP | 22 | ~2 weeks | Build a C program from explicit rules | 22/22 ✅ |
 | **1b** — Variables & includes | 12 | ~1.5 weeks | Multi-file projects with `< file` includes | 12/12 ✅ |
 | **2** — Metarules & parallel | 22 | ~2.5 weeks | `%.o: %.c` patterns, NPROC parallel builds | 22/22 ✅ |
-| **3** — Aggregates & polish | 10 | ~2 weeks | Full plan9port mk compatibility | 0/10 |
+| **3** — Aggregates & polish | 10 | ~2 weeks | Full plan9port mk compatibility | 2/10 █░ |
 | **Deferred** — Plan 9 specifics | 4 | — | `$O`, `membername`, stdout-as-mkfile | 0/4 |
 
 *Phase 1a modules done: `lex` (✓), `attr` (✓), `error` (✓). Next: `parse`, `graph`.*
@@ -1075,6 +1075,8 @@ This is inherently blocking. Async adds no benefit and adds complexity.
 **Background:** The Plan 9 mk philosophy is that recipes are shell scripts. Both `sh` and `rc` are first-class. The `S:` attribute already supports custom interpreters. Duckscript would just be another interpreter.
 
 **Tentative answer:** **External shell as default, duckscript as optional.** `$MKSHELL` defaults to `sh -c`. `S[duckscript]` attribute enables in-process execution for recipes that only need file ops. Feature-gate duckscript behind a Cargo feature flag (`duckscript`). This keeps the core crate lean while offering a performance option.
+
+**cargo-make validation (June 2026):** Confirmed the pattern. duckscript integration is 3 function calls: `Context::new()` → `duckscriptsdk::load()` → `run_script()`. No deep coupling. The `envmnt` crate handles `${VAR}`/`$VAR` expansion (same syntax as Plan 9 mk) and could simplify our var.rs module.
 
 ---
 
@@ -1323,3 +1325,15 @@ Larger multi-file mkfiles for end-to-end validation:
 4. **Recipe-time variable expansion order** — Currently $target, $prereq, $pid are injected in recipe::run(). But $stem requires graph context (metarule matching). Phase 2 must thread stem through graph → sched → recipe. The Recipe struct already has space for this.
 
 5. **The plan's Phase 1a/1b module descriptions are outdated** — They describe what we PLANNED to implement, not what we ACTUALLY implemented. E.g., lex handles backticks and `<` tokens; parse handles multi-target rules. These should be updated to match reality.
+
+### Post-Phase 2 insights (cargo-make research)
+
+1. **duckscript embedding is trivial** — 3 function calls: `Context::new()`, `duckscriptsdk::load()`, `run_script()`. No architectural changes needed — just a new `DuckShell` impl of the `Shell` trait.
+
+2. **`envmnt` crate worth evaluating** — Handles `${VAR}`/`$VAR` expansion with defaults (`${VAR:-default}`). Could simplify or replace our `var.rs` expansion logic. Phase 3 decision: evaluate vs keep custom code.
+
+3. **cargo-make uses DFS, not petgraph** — Validates our simple recursive DAG approach. No need for a graph library.
+
+4. **CLI flags to adopt**: `--loglevel` (debug levels), `--env KEY=VALUE` (override), `--print-steps` (like `mk -n`), `--cwd` (working dir).
+
+5. **Explicitly NOT adopting**: plugin system, task inheritance (`extend`/`clear`), profiles, workspaces, Shell2Batch, inline `@rust`.
