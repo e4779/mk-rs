@@ -1,6 +1,6 @@
 //! DAG builder, cycle detector, and staleness checker.
 //!
-//! Phase 1a scope: concrete rules only, no metarules, sequential only.
+//! Phase 2 scope: concrete rules, % metarules, & metarules, R: regex metarules.
 //!
 //! # Architecture
 //!
@@ -13,6 +13,8 @@
 //! - Staleness determines which targets need rebuilding.
 
 use std::collections::HashMap;
+
+use regex::Regex;
 
 use crate::error::GraphError;
 use crate::parse::{Rule, Stmt};
@@ -108,9 +110,21 @@ fn get_mtime(path: &str) -> Option<std::time::SystemTime> {
 /// Try to match a target name against a metarule pattern.
 /// Returns Some(stem) if matched, None otherwise.
 ///
-/// Patterns use `%` as a wildcard: `%.o` matches `foo.o` with stem `foo`,
-/// `lib%.a` matches `libfoo.a` with stem `foo`.
+/// Tries `%` first (greedy, matches anything), then `&` (matches a single
+/// path component with no dots or slashes).
 fn match_metarule(target: &str, pattern: &str) -> Option<String> {
+    if pattern.contains('%') {
+        return match_percent(target, pattern);
+    }
+    if pattern.contains('&') {
+        return match_ampersand(target, pattern);
+    }
+    None
+}
+
+/// Match a `%` metarule: `%.o` matches `foo.o` with stem `foo`,
+/// `lib%.a` matches `libfoo.a` with stem `foo`.
+fn match_percent(target: &str, pattern: &str) -> Option<String> {
     if let Some(pos) = pattern.find('%') {
         let prefix = &pattern[..pos];
         let suffix = &pattern[pos + 1..];
@@ -127,12 +141,34 @@ fn match_metarule(target: &str, pattern: &str) -> Option<String> {
     None
 }
 
+/// Match an `&` metarule: `&.c` matches `hello.c` with stem `hello`.
+/// `&` matches a single path component (no dots or slashes).
+fn match_ampersand(target: &str, pattern: &str) -> Option<String> {
+    if let Some(pos) = pattern.find('&') {
+        let prefix = &pattern[..pos];
+        let suffix = &pattern[pos + 1..];
+
+        if target.starts_with(prefix) && target.ends_with(suffix) {
+            let stem_start = prefix.len();
+            let stem_end = target.len() - suffix.len();
+            if stem_start <= stem_end {
+                let stem = &target[stem_start..stem_end];
+                // & must not contain '.' or '/'
+                if !stem.contains('.') && !stem.contains('/') {
+                    return Some(stem.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
 // ── Graph builder ─────────────────────────────────────────────────────────
 
 /// Build a DAG from parsed statements for the given target names.
 ///
-/// Phase 1a: only concrete rules. Metarules and regex rules are skipped.
-/// Simple transitive closure from requested targets.
+/// Phase 2: supports concrete rules, `%` metarules, `&` metarules,
+/// and `R:` regex metarules. Simple transitive closure from requested targets.
 ///
 /// Returns an error if a cycle is detected or a requested target has no rule
 /// and does not exist on the filesystem.
@@ -150,6 +186,14 @@ pub fn build_graph(stmts: &[Stmt], target_names: &[String]) -> Result<Graph, Gra
         .iter()
         .filter_map(|stmt| match stmt {
             Stmt::Rule(r) if r.is_metarule && !r.is_regex => Some(r),
+            _ => None,
+        })
+        .collect();
+
+    let regex_rules: Vec<&Rule> = stmts
+        .iter()
+        .filter_map(|stmt| match stmt {
+            Stmt::Rule(r) if r.is_regex => Some(r),
             _ => None,
         })
         .collect();
@@ -191,6 +235,7 @@ pub fn build_graph(stmts: &[Stmt], target_names: &[String]) -> Result<Graph, Gra
         graph: &mut Graph,
         rules_by_target: &HashMap<&str, Vec<&'a Rule>>,
         metarules: &[&'a Rule],
+        regex_rules: &[&'a Rule],
         name_to_index: &mut HashMap<String, NodeIndex>,
         name: &str,
     ) -> NodeIndex {
@@ -220,7 +265,7 @@ pub fn build_graph(stmts: &[Stmt], target_names: &[String]) -> Result<Graph, Gra
             // Phase 1a: use first rule's prereqs only
             let rule = rules[0];
             for prereq in &rule.prereqs {
-                let prereq_idx = build_node(graph, rules_by_target, metarules, name_to_index, prereq);
+                let prereq_idx = build_node(graph, rules_by_target, metarules, regex_rules, name_to_index, prereq);
                 let arc_idx = ArcIndex(graph.arcs.len());
                 graph.nodes[idx.0].arcs_in.push(arc_idx);
                 graph.arcs.push(Arc {
@@ -231,19 +276,19 @@ pub fn build_graph(stmts: &[Stmt], target_names: &[String]) -> Result<Graph, Gra
                 });
             }
         } else {
-            // No concrete rule — try metarules
+            // No concrete rule — try % and & metarules first
+            let mut matched = false;
             for metarule in metarules {
                 if let Some(stem) = match_metarule(name, &metarule.targets[0]) {
-                    // Apply metarule attributes to the target
                     if metarule.attributes.is_virtual() {
                         graph.nodes[idx.0].flags.set(NodeFlags::VIRTUAL);
                     }
 
-                    // Substitute % in prereqs with stem
+                    // Substitute both % and & in prereqs with stem
                     for prereq in &metarule.prereqs {
-                        let prereq = prereq.replace('%', &stem);
+                        let prereq = prereq.replace('%', &stem).replace('&', &stem);
                         let prereq_idx = build_node(
-                            graph, rules_by_target, metarules, name_to_index, &prereq,
+                            graph, rules_by_target, metarules, regex_rules, name_to_index, &prereq,
                         );
                         let arc_idx = ArcIndex(graph.arcs.len());
                         graph.nodes[idx.0].arcs_in.push(arc_idx);
@@ -254,7 +299,54 @@ pub fn build_graph(stmts: &[Stmt], target_names: &[String]) -> Result<Graph, Gra
                             is_meta: true,
                         });
                     }
+                    matched = true;
                     break;
+                }
+            }
+
+            // Try regex metarules (R: prefix)
+            if !matched {
+                for regex_rule in regex_rules {
+                    let pattern = &regex_rule.targets[0];
+                    if let Ok(re) = Regex::new(pattern) {
+                        if let Some(caps) = re.captures(name) {
+                            let full_match = caps.get(0).map(|m| m.as_str().to_string()).unwrap_or_default();
+
+                            // Apply regex rule attributes
+                            if regex_rule.attributes.is_virtual() {
+                                graph.nodes[idx.0].flags.set(NodeFlags::VIRTUAL);
+                            }
+
+                            // Substitute \1, \2, ... in prereqs with capture groups
+                            let prereqs: Vec<String> = regex_rule.prereqs.iter()
+                                .map(|p| {
+                                    let mut result = p.clone();
+                                    for (i, cap) in caps.iter().enumerate() {
+                                        if let Some(m) = cap {
+                                            let placeholder = format!("\\{}", i);
+                                            result = result.replace(&placeholder, m.as_str());
+                                        }
+                                    }
+                                    result
+                                })
+                                .collect();
+
+                            for prereq in &prereqs {
+                                let prereq_idx = build_node(
+                                    graph, rules_by_target, metarules, regex_rules, name_to_index, prereq,
+                                );
+                                let arc_idx = ArcIndex(graph.arcs.len());
+                                graph.nodes[idx.0].arcs_in.push(arc_idx);
+                                graph.arcs.push(Arc {
+                                    from: prereq_idx,
+                                    to: idx,
+                                    stem: full_match.clone(),
+                                    is_meta: true,
+                                });
+                            }
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -263,7 +355,7 @@ pub fn build_graph(stmts: &[Stmt], target_names: &[String]) -> Result<Graph, Gra
     }
 
     for target in &targets {
-        let idx = build_node(&mut graph, &rules_by_target, &metarules, &mut name_to_index, target);
+        let idx = build_node(&mut graph, &rules_by_target, &metarules, &regex_rules, &mut name_to_index, target);
         graph.targets.push(idx);
     }
 
@@ -273,7 +365,16 @@ pub fn build_graph(stmts: &[Stmt], target_names: &[String]) -> Result<Graph, Gra
         let has_rule = rules_by_target.contains_key(node.name.as_str())
             || metarules
                 .iter()
-                .any(|mr| match_metarule(&node.name, &mr.targets[0]).is_some());
+                .any(|mr| match_metarule(&node.name, &mr.targets[0]).is_some())
+            || regex_rules
+                .iter()
+                .any(|rr| {
+                    if let Ok(re) = Regex::new(&rr.targets[0]) {
+                        re.is_match(&node.name)
+                    } else {
+                        false
+                    }
+                });
         if !has_rule && node.mtime.is_none() {
             return Err(GraphError::NoRule {
                 target: node.name.clone(),
@@ -730,5 +831,85 @@ mod tests {
         let g = graph_from_str(input, &["hello.o"]).unwrap();
         let hello_o = g.nodes.iter().position(|n| n.name == "hello.o").unwrap();
         assert!(g.nodes[hello_o].flags.is_virtual());
+    }
+
+    // ── & metarule tests ────────────────────────────────────────────
+
+    #[test]
+    fn ampersand_metarule_match() {
+        // & matches "hello" (no dots, single path component)
+        let input = "&.o: &.c\n\tcc -c $stem.c\nprog: hello.o\n";
+        let tokens = tokenize(input, ShellMode::Sh).unwrap();
+        let stmts = parse::parse(&tokens).unwrap();
+        let g = build_graph(&stmts, &["prog".into()]).unwrap();
+        assert!(g.nodes.iter().any(|n| n.name == "hello.o"));
+        assert!(g.nodes.iter().any(|n| n.name == "hello.c"));
+    }
+
+    #[test]
+    fn ampersand_rejects_dot_in_stem() {
+        // & must not match a stem containing '.'
+        let input = "&.o: &.c\n";
+        let result = graph_from_str(input, &["foo.bar.o"]);
+        // foo.bar.o doesn't match &.o because stem "foo.bar" contains '.'
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn ampersand_rejects_slash_in_stem() {
+        let input = "&.o: &.c\n";
+        let result = graph_from_str(input, &["dir/name.o"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn ampersand_simple_match() {
+        let input = "&.o: &.c\n";
+        let g = graph_from_str(input, &["hello.o"]).unwrap();
+        assert_eq!(g.nodes.len(), 2);
+        let hello_o = g.nodes.iter().position(|n| n.name == "hello.o").unwrap();
+        let arc = &g.arcs[g.nodes[hello_o].arcs_in[0].0];
+        assert!(arc.is_meta);
+        assert_eq!(arc.stem, "hello");
+        assert_eq!(g.nodes[arc.from.0].name, "hello.c");
+    }
+
+    // ── R: regex metarule tests ─────────────────────────────────────
+
+    #[test]
+    fn regex_metarule_simple() {
+        // A regex metarule with R attribute
+        let input = "foo:R: bar\n";
+        let g = graph_from_str(input, &["foo"]).unwrap();
+        assert_eq!(g.nodes.len(), 2);
+        let foo_node = g.nodes.iter().position(|n| n.name == "foo").unwrap();
+        assert_eq!(g.nodes[foo_node].arcs_in.len(), 1);
+    }
+
+    #[test]
+    fn regex_metarule_with_capture() {
+        // Pattern with capture group
+        let input = "(.+)\\.o:R: \\1.c\n";
+        let g = graph_from_str(input, &["hello.o"]).unwrap();
+        assert_eq!(g.nodes.len(), 2);
+        let hello_o = g.nodes.iter().position(|n| n.name == "hello.o").unwrap();
+        let arc = &g.arcs[g.nodes[hello_o].arcs_in[0].0];
+        assert!(arc.is_meta);
+        assert_eq!(g.nodes[arc.from.0].name, "hello.c");
+    }
+
+    #[test]
+    fn regex_metarule_no_match() {
+        let input = "foo\\.txt:R: foo.src\n";
+        let result = graph_from_str(input, &["bar.txt"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn regex_metarule_virtual_attr() {
+        let input = "target:VR: dep\n";
+        let g = graph_from_str(input, &["target"]).unwrap();
+        let target = g.nodes.iter().find(|n| n.name == "target").unwrap();
+        assert!(target.flags.is_virtual());
     }
 }

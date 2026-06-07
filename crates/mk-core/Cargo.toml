@@ -6,3 +6,4 @@ description = "mk-rust core: lexer, parser, DAG builder, scheduler"
 
 [dependencies]
 thiserror = "2"
+regex = "1"

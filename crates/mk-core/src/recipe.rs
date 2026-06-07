@@ -29,6 +29,8 @@ pub struct Recipe {
     pub attributes: Attributes,
     /// Stem from metarule match (None for concrete rules).
     pub stem: Option<String>,
+    /// All targets of the rule (for $alltarget variable).
+    pub all_targets: Vec<String>,
 }
 
 // ── Options ────────────────────────────────────────────────────────────────
@@ -161,6 +163,7 @@ pub fn run(
     env.insert("prereq".to_string(), recipe.prereqs.join(" "));
     env.insert("newprereq".to_string(), recipe.prereqs.join(" "));
     env.insert("pid".to_string(), std::process::id().to_string());
+    env.insert("alltarget".to_string(), recipe.all_targets.join(" "));
     if let Some(ref stem) = recipe.stem {
         env.insert("stem".to_string(), stem.clone());
     }
@@ -274,6 +277,7 @@ mod tests {
             env: HashMap::new(),
             attributes: Attributes::default(),
             stem: None,
+            all_targets: vec!["hello".into()],
         }
     }
 
@@ -626,6 +630,41 @@ mod tests {
         assert_eq!(
             env.get("newprereq").map(|s| s.as_str()),
             Some("hello.c")
+        );
+    }
+
+    #[test]
+    fn run_injects_alltarget() {
+        let shell = MockShell {
+            exit_code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+            last_env: std::sync::Mutex::new(HashMap::new()),
+        };
+        let mut recipe = make_recipe();
+        recipe.all_targets = vec!["hello".into(), "hello_debug".into()];
+        run(&recipe, &shell, &RecipeOptions::default()).unwrap();
+        let env = shell.last_env.lock().unwrap();
+        assert_eq!(
+            env.get("alltarget").map(|s| s.as_str()),
+            Some("hello hello_debug")
+        );
+    }
+
+    #[test]
+    fn run_injects_alltarget_single() {
+        let shell = MockShell {
+            exit_code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+            last_env: std::sync::Mutex::new(HashMap::new()),
+        };
+        let recipe = make_recipe();
+        run(&recipe, &shell, &RecipeOptions::default()).unwrap();
+        let env = shell.last_env.lock().unwrap();
+        assert_eq!(
+            env.get("alltarget").map(|s| s.as_str()),
+            Some("hello")
         );
     }
 }

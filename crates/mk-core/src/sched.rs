@@ -154,6 +154,7 @@ fn build_recipe(
         env: env.clone(),
         attributes: rule.attributes,
         stem,
+        all_targets: vec![node.name.clone()],
     }
 }
 
