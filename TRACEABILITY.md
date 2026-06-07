@@ -87,7 +87,7 @@
 | F-031 | `$newprereq` variable | `var`, `recipe` | 2 | ✓ |
 | F-032 | `$newmember` variable | `var`, `recipe` | 3 | — |
 | F-038 | `$pid` variable | `var`, `recipe` | 1b | ✓ |
-| F-053 | `$MKSHELL` variable | `shell`, `cli` | 2 | ◐ (sh only) |
+| F-053 | `$MKSHELL` variable | `shell`, `cli` | 3 | ◐ (sh + flag parsing done, duckscript in Phase 3) |
 | F-054 | `$MKFLAGS` variable | `var` | 2 | ✓ |
 | F-055 | `$MKARGS` variable | `var` | 2 | ✓ |
 

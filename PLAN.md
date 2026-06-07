@@ -16,7 +16,7 @@ What mk-rust **is**:
 - A direct port of Plan 9 mk semantics: pattern-based metarules, transitive closure, attribute system, `$stem`/`$target`/`$prereq` variables
 - A library-first crate (`mk-core`) with a thin CLI wrapper (`mk-cli`)
 - Fast, safe, portable — leverages Rust's ownership model where C used raw pointers
-- 100% compatible with existing mkfiles intended for plan9port mk (sh recipes by default, rc via `$MKSHELL`)
+- 100% compatible with existing mkfiles intended for plan9port mk (sh recipes, duckscript optional via `$MKSHELL`)
 
 What mk-rust is **not**:
 
@@ -40,14 +40,14 @@ mk-rust/                     # workspace root
 ├── PLAN.md                  # this file
 ├── crates/
 │   ├── mk-core/             # library: lex + parse + graph + var + sched + shell + attr + archive + include
-│   ├── mk-shell/            # Shell trait + sh/rc/duckscript implementations
+│   ├── mk-shell/            # Shell trait + sh/duckscript implementations
 │   └── mk-cli/              # binary: clap CLI, thin wrapper around mk-core
 ```
 
 | Crate | Purpose | Dependencies |
 |-------|---------|-------------|
 | `mk-core` | All build logic. Exposes `build(mkfile_path, opts) -> Result<BuildOutcome>`. No I/O in public API surface — takes a `shell: &dyn Shell` and file system via a `FileSystem` trait (testable). | `regex`, `glob`, `serde` (optional, for AST debugging), `thiserror`, `log` |
-| `mk-shell` | `Shell` trait definition (in mk-core), plus `sh::Shell`, `rc::Shell`, `duckscript::Shell` implementations. | `duct` (for sh), `duckscript` + `duckscriptsdk` (optional feature) |
+| `mk-shell` | `Shell` trait definition (in mk-core), plus `sh::Shell`, `duckscript::Shell` implementations. | `duct` (for sh), `duckscript` + `duckscriptsdk` (optional feature) |
 | `mk-cli` | CLI entry point. Argument parsing, loading mkfile, calling `mk-core::build()`, formatting output. | `clap` (derive), `mk-core`, `mk-shell`, `env_logger` |
 
 ### 2.2 Key dependencies
@@ -386,7 +386,7 @@ pub fn build_scope(stmts: &[Stmt]) -> Result<Scope, VarError>;
 ```rust
 /// Shell abstraction for recipe execution.
 pub trait Shell: Send + Sync {
-    /// Return the shell name (e.g., "sh", "rc", "duckscript").
+    /// Return the shell name (e.g., "sh", "duckscript").
     fn name(&self) -> &str;
 
     /// Execute a recipe script. Returns exit code.
@@ -970,7 +970,7 @@ mkfile:
 | `parse` | `%` metarules (single `%` match), `&` metarules (ampersand matchers), `R:` regex metarules. Wire `< file` includes to include module. Backtick expansion in assignments |
 | `graph` | Metarule application: for each unknown target, try `%` metarules, then `&`, then `R`. Pruning: vacuous + ambiguous edge removal |
 | `var` | `$stem`, `$target`, `$prereq`, `$newprereq`, `$alltarget`. Namelist access: `$stem(1)`, `$stem(N)`. Recipe-time variable expansion |
-| `shell` | `RcShell` in mk-shell. Shell selection via `$MKSHELL` and per-rule `S:` attribute. Proper rc env format (`\x01` separator) |
+| `shell` | `duckscript::Shell` in mk-shell (feature-gated). Shell selection via `$MKSHELL`. **No** RcShell — sh + duckscript covers all use cases |
 | CLI | `-p N` / `$NPROC` for parallelism. `-i` for missing intermediates. `-k` for keep-going |
 
 **Tests:**
