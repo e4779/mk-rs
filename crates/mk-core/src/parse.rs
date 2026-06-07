@@ -67,27 +67,51 @@ fn parse_with_includes(
     while pos < tokens.len() && tokens[pos] != Token::Eof {
         match &tokens[pos] {
             Token::Include => {
-                // < file — include directive
                 pos += 1;
-                let mut path_parts = Vec::new();
-                while pos < tokens.len() && matches!(&tokens[pos], Token::Word(_)) {
-                    if let Token::Word(ref w) = tokens[pos] {
-                        path_parts.push(w.clone());
-                    }
+                if pos < tokens.len() && tokens[pos] == Token::Pipe {
+                    // <| command — pipe include
                     pos += 1;
-                }
-                let path = path_parts.join(" ");
-                // Read and parse the included file
-                match ctx.include_file(&path, base_dir) {
-                    Ok(included_stmts) => {
-                        stmts.extend(included_stmts);
+                    let mut cmd_parts = Vec::new();
+                    while pos < tokens.len() && matches!(&tokens[pos], Token::Word(_)) {
+                        if let Token::Word(ref w) = tokens[pos] {
+                            cmd_parts.push(w.clone());
+                        }
+                        pos += 1;
                     }
-                    Err(e) => {
-                        return Err(ParseError::UnexpectedToken {
-                            expected: "valid include path".into(),
-                            got: e.to_string(),
-                            line,
-                        });
+                    let command = cmd_parts.join(" ");
+                    match ctx.include_command(&command, base_dir) {
+                        Ok(included_stmts) => {
+                            stmts.extend(included_stmts);
+                        }
+                        Err(e) => {
+                            return Err(ParseError::UnexpectedToken {
+                                expected: "valid command".into(),
+                                got: e.to_string(),
+                                line,
+                            });
+                        }
+                    }
+                } else {
+                    // < file — include directive
+                    let mut path_parts = Vec::new();
+                    while pos < tokens.len() && matches!(&tokens[pos], Token::Word(_)) {
+                        if let Token::Word(ref w) = tokens[pos] {
+                            path_parts.push(w.clone());
+                        }
+                        pos += 1;
+                    }
+                    let path = path_parts.join(" ");
+                    match ctx.include_file(&path, base_dir) {
+                        Ok(included_stmts) => {
+                            stmts.extend(included_stmts);
+                        }
+                        Err(e) => {
+                            return Err(ParseError::UnexpectedToken {
+                                expected: "valid include path".into(),
+                                got: e.to_string(),
+                                line,
+                            });
+                        }
                     }
                 }
                 // Consume the trailing newline
@@ -552,6 +576,22 @@ mod tests {
         match &stmts[0] {
             Stmt::Rule(r) => {
                 assert_eq!(r.line, 2);
+            }
+            _ => panic!("expected Rule"),
+        }
+    }
+
+    #[test]
+    fn include_command_parses_stdout() {
+        // <| echo "target: prereq" should parse as a rule
+        let input = "<| echo \"target: prereq\"\n";
+        let tokens = tokenize(input, ShellMode::Sh).unwrap();
+        let stmts = parse(&tokens).unwrap();
+        assert_eq!(stmts.len(), 1);
+        match &stmts[0] {
+            Stmt::Rule(r) => {
+                assert_eq!(r.targets, vec!["target"]);
+                assert_eq!(r.prereqs, vec!["prereq"]);
             }
             _ => panic!("expected Rule"),
         }

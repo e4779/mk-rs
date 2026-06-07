@@ -88,6 +88,45 @@ impl IncludeContext {
         self.chain.pop();
         result
     }
+
+    /// Run a shell command and parse its stdout as mkfile syntax.
+    ///
+    /// The command is executed via `sh -c <command>` with `base_dir` as
+    /// the working directory. Stdout is lexed and parsed; stderr is
+    /// discarded. Returns an error if the command exits non-zero.
+    pub fn include_command(
+        &mut self,
+        command: &str,
+        base_dir: &Path,
+    ) -> Result<Vec<Stmt>, IncludeError> {
+        let output = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(command)
+            .current_dir(base_dir)
+            .output()
+            .map_err(IncludeError::Io)?;
+
+        if !output.status.success() {
+            return Err(IncludeError::CommandFailed {
+                command: command.to_string(),
+            });
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let tokens = tokenize(&stdout, ShellMode::Sh).map_err(|e| {
+            IncludeError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e.to_string(),
+            ))
+        })?;
+
+        parse(&tokens).map_err(|e| {
+            IncludeError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e.to_string(),
+            ))
+        })
+    }
 }
 
 impl Default for IncludeContext {
@@ -258,6 +297,50 @@ mod tests {
                 assert!(chain.contains(" -> "));
             }
             other => panic!("expected CircularInclude, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn include_command_simple() {
+        let mut ctx = IncludeContext::new();
+        let stmts = ctx
+            .include_command("echo 'TARGET = value'", &std::env::current_dir().unwrap())
+            .unwrap();
+        assert_eq!(stmts.len(), 1);
+        match &stmts[0] {
+            Stmt::Assign(a) => {
+                assert_eq!(a.name, "TARGET");
+                assert_eq!(a.value, "value");
+            }
+            _ => panic!("expected Assign"),
+        }
+    }
+
+    #[test]
+    fn include_command_failed() {
+        let mut ctx = IncludeContext::new();
+        let result =
+            ctx.include_command("exit 1", &std::env::current_dir().unwrap());
+        assert!(matches!(result, Err(IncludeError::CommandFailed { .. })));
+    }
+
+    #[test]
+    fn include_command_rule_with_recipe() {
+        let mut ctx = IncludeContext::new();
+        let stmts = ctx
+            .include_command(
+                "printf 'target: prereq\n\techo hello\n'",
+                &std::env::current_dir().unwrap(),
+            )
+            .unwrap();
+        assert_eq!(stmts.len(), 1);
+        match &stmts[0] {
+            Stmt::Rule(r) => {
+                assert_eq!(r.targets, vec!["target"]);
+                assert_eq!(r.prereqs, vec!["prereq"]);
+                assert_eq!(r.recipe, Some("echo hello".into()));
+            }
+            _ => panic!("expected Rule"),
         }
     }
 }

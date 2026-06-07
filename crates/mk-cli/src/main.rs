@@ -152,6 +152,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Build DAG
     let mut graph = build_graph(&stmts, &target_names)?;
 
+    // MKSHELL: allow switching shell via env variable (F-053)
+    // Only sh is supported for now; rc support comes in Phase 3.
+    let mkshell = scope.get("MKSHELL").unwrap_or("/bin/sh").to_string();
+    if mkshell.contains("rc") {
+        eprintln!("mk: warning: rc shell not yet supported, using sh");
+    }
+
     // Build sched options from CLI flags
     let mkflags = std::env::args()
         .skip(1)
@@ -173,6 +180,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         all: cli.all,
         nproc: 1, // sequential by default; $NPROC env var overrides
         force_intermediates: cli.force_intermediates,
+        mkshell,
         mkflags,
         mkargs,
     };
@@ -183,7 +191,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let working_dir = std::env::current_dir()?;
 
     // Execute
-    let shell = ShShell;
+    let shell = ShShell; // always sh for now, RcShell in Phase 3
     let outcome = execute(&mut graph, &rules, &shell, &working_dir, &env, &opts)?;
 
     // Print failures (only reachable with -k)

@@ -54,6 +54,8 @@ pub struct SchedOptions {
     pub force_intermediates: bool,
     /// -p N: number of parallel jobs (0 = read $NPROC, 1 = sequential).
     pub nproc: usize,
+    /// $MKSHELL value for future shell dispatch (F-053)
+    pub mkshell: String,
     pub mkflags: String,
     pub mkargs: String,
 }
@@ -69,6 +71,7 @@ impl Default for SchedOptions {
             all: false,
             force_intermediates: false,
             nproc: 1,
+            mkshell: String::from("/bin/sh"),
             mkflags: String::new(),
             mkargs: String::new(),
         }

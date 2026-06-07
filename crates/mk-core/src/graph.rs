@@ -297,6 +297,8 @@ pub fn build_graph_with_nrep(
         } else if depth < nrep {
             // No concrete rule, depth allows metarule expansion
             let mut matched = false;
+            let mut first_match_prereqs: Option<Vec<String>> = None;
+
             for metarule in metarules {
                 // F-027: n attribute — skip metarule if target doesn't exist on fs
                 if metarule.attributes.is_no_virtual() {
@@ -305,28 +307,43 @@ pub fn build_graph_with_nrep(
                     }
                 }
                 if let Some(stem) = match_metarule(name, &metarule.targets[0]) {
-                    if metarule.attributes.is_virtual() {
-                        graph.nodes[idx.0].flags.set(NodeFlags::VIRTUAL);
-                    }
+                    // Compute substituted prereqs for this match
+                    let prereqs: Vec<String> = metarule
+                        .prereqs
+                        .iter()
+                        .map(|p| p.replace('%', &stem).replace('&', &stem))
+                        .collect();
 
-                    // Substitute both % and & in prereqs with stem
-                    for prereq in &metarule.prereqs {
-                        let prereq = prereq.replace('%', &stem).replace('&', &stem);
-                        let prereq_idx = build_node(
-                            graph, rules_by_target, metarules, regex_rules, name_to_index,
-                            nrep, depth + 1, &prereq,
-                        );
-                        let arc_idx = ArcIndex(graph.arcs.len());
-                        graph.nodes[idx.0].arcs_in.push(arc_idx);
-                        graph.arcs.push(Arc {
-                            from: prereq_idx,
-                            to: idx,
-                            stem: stem.clone(),
-                            is_meta: true,
-                        });
+                    if !matched {
+                        // F-061: first match — use it
+                        if metarule.attributes.is_virtual() {
+                            graph.nodes[idx.0].flags.set(NodeFlags::VIRTUAL);
+                        }
+                        for prereq in &prereqs {
+                            let prereq_idx = build_node(
+                                graph, rules_by_target, metarules, regex_rules,
+                                name_to_index, nrep, depth + 1, prereq,
+                            );
+                            let arc_idx = ArcIndex(graph.arcs.len());
+                            graph.nodes[idx.0].arcs_in.push(arc_idx);
+                            graph.arcs.push(Arc {
+                                from: prereq_idx,
+                                to: idx,
+                                stem: stem.clone(),
+                                is_meta: true,
+                            });
+                        }
+                        matched = true;
+                        first_match_prereqs = Some(prereqs);
+                    } else {
+                        // F-061: subsequent match — check for ambiguity
+                        if prereqs != *first_match_prereqs.as_ref().unwrap() {
+                            eprintln!(
+                                "mk: warning: ambiguous rules for target '{}'",
+                                name
+                            );
+                        }
                     }
-                    matched = true;
-                    break;
                 }
             }
 
@@ -389,7 +406,10 @@ pub fn build_graph_with_nrep(
         graph.targets.push(idx);
     }
 
-    // 4. Validate requested targets (must have a rule or exist on fs)
+    // 4. Prune vacuous meta-edges (F-060): concrete rules override metarules
+    prune_vacuous(&mut graph);
+
+    // 5. Validate requested targets (must have a rule or exist on fs)
     for &target_idx in &graph.targets {
         let node = &graph.nodes[target_idx.0];
         let has_rule = rules_by_target.contains_key(node.name.as_str())
@@ -412,10 +432,29 @@ pub fn build_graph_with_nrep(
         }
     }
 
-    // 5. Cycle detection
+    // 6. Cycle detection
     detect_cycles(&mut graph)?;
 
     Ok(graph)
+}
+
+// ── Pruning vacuous meta-edges ────────────────────────────────────────────
+
+/// Remove metarule-generated edges when a concrete rule exists for the same
+/// target (F-060). Concrete rules always take priority over metarule
+/// expansions — if a node has both concrete and meta incoming arcs, the meta
+/// arcs are pruned.
+fn prune_vacuous(graph: &mut Graph) {
+    for node in &mut graph.nodes {
+        let has_concrete = node
+            .arcs_in
+            .iter()
+            .any(|&ai| !graph.arcs[ai.0].is_meta);
+
+        if has_concrete {
+            node.arcs_in.retain(|&ai| !graph.arcs[ai.0].is_meta);
+        }
+    }
 }
 
 // ── Cycle detection ───────────────────────────────────────────────────────
@@ -1006,6 +1045,88 @@ mod tests {
         let g = graph_from_str(&input, &[&o_file.to_string_lossy()]).unwrap();
         assert!(g.nodes.len() >= 2);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── NREP depth limit ─────────────────────────────────────────────
+
+    #[test]
+    fn pruning_removes_meta_edges_when_concrete_exists() {
+        // Manually construct a graph where a node has both concrete and meta
+        // incoming arcs, then verify prune_vacuous removes the meta arcs.
+        let mut graph = Graph {
+            nodes: vec![
+                Node {
+                    name: "foo.o".into(),
+                    mtime: None,
+                    flags: NodeFlags::default(),
+                    arcs_in: Vec::new(),
+                },
+                Node {
+                    name: "foo.c".into(),
+                    mtime: None,
+                    flags: NodeFlags::default(),
+                    arcs_in: Vec::new(),
+                },
+                Node {
+                    name: "foo.s".into(),
+                    mtime: None,
+                    flags: NodeFlags::default(),
+                    arcs_in: Vec::new(),
+                },
+            ],
+            arcs: vec![
+                // meta arc: foo.c -> foo.o (from % metarule)
+                Arc {
+                    from: NodeIndex(1),
+                    to: NodeIndex(0),
+                    stem: "foo".into(),
+                    is_meta: true,
+                },
+                // concrete arc: foo.s -> foo.o (from concrete rule)
+                Arc {
+                    from: NodeIndex(2),
+                    to: NodeIndex(0),
+                    stem: String::new(),
+                    is_meta: false,
+                },
+            ],
+            targets: vec![NodeIndex(0)],
+        };
+        // foo.o has both concrete (foo.s) and meta (foo.c) arcs
+        graph.nodes[0].arcs_in = vec![ArcIndex(0), ArcIndex(1)];
+
+        prune_vacuous(&mut graph);
+
+        // After pruning, only the concrete arc should remain
+        assert_eq!(graph.nodes[0].arcs_in.len(), 1);
+        let remaining_arc = &graph.arcs[graph.nodes[0].arcs_in[0].0];
+        assert!(!remaining_arc.is_meta);
+        assert_eq!(graph.nodes[remaining_arc.from.0].name, "foo.s");
+    }
+
+    #[test]
+    fn ambiguous_metarules_different_prereqs_uses_first() {
+        // F-061: two metarules matching same target with DIFFERENT prereqs.
+        // The first metarule should be used; a warning is emitted to stderr.
+        let input = "%.o: %.c\n%.o: %.s\n";
+        let g = graph_from_str(input, &["hello.o"]).unwrap();
+        // Should use first metarule (%.c), not second (%.s)
+        let hello_o = g.nodes.iter().position(|n| n.name == "hello.o").unwrap();
+        assert_eq!(g.nodes[hello_o].arcs_in.len(), 1);
+        let arc = &g.arcs[g.nodes[hello_o].arcs_in[0].0];
+        assert_eq!(g.nodes[arc.from.0].name, "hello.c");
+    }
+
+    #[test]
+    fn same_prereqs_no_ambiguity() {
+        // F-061: two metarules with IDENTICAL prereqs — no ambiguity.
+        let input = "%.o: %.c\n%.o: %.c\n";
+        let g = graph_from_str(input, &["hello.o"]).unwrap();
+        // Should work fine
+        let hello_o = g.nodes.iter().position(|n| n.name == "hello.o").unwrap();
+        assert_eq!(g.nodes[hello_o].arcs_in.len(), 1);
+        let arc = &g.arcs[g.nodes[hello_o].arcs_in[0].0];
+        assert_eq!(g.nodes[arc.from.0].name, "hello.c");
     }
 
     // ── NREP depth limit ─────────────────────────────────────────────
