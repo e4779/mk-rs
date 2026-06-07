@@ -160,6 +160,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         touch: cli.touch,
         silent: cli.silent,
         all: cli.all,
+        force_intermediates: cli.force_intermediates,
     };
 
     // Build environment from variable scope

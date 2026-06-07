@@ -49,6 +49,8 @@ pub struct SchedOptions {
     pub silent: bool,
     /// -a: assume all targets are out of date
     pub all: bool,
+    /// -i: force missing intermediate targets to be built (F-017, F-051)
+    pub force_intermediates: bool,
 }
 
 impl Default for SchedOptions {
@@ -60,6 +62,7 @@ impl Default for SchedOptions {
             touch: false,
             silent: false,
             all: false,
+            force_intermediates: false,
         }
     }
 }
@@ -154,7 +157,7 @@ pub fn execute(
     opts: &SchedOptions,
 ) -> Result<BuildOutcome, SchedError> {
     // 1. Get stale nodes
-    let stale = stale_nodes(graph);
+    let stale = stale_nodes(graph, opts.force_intermediates);
 
     // Build a set for O(1) membership check
     let mut stale_set: HashSet<usize> = stale.iter().map(|idx| idx.0).collect();
@@ -276,7 +279,7 @@ pub fn execute(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::{Graph, Node, NodeIndex, NodeFlags, build_graph};
+    use crate::graph::{Graph, build_graph};
     use crate::lex::{tokenize, ShellMode};
     use crate::parse;
     use crate::shell::ShellResult;

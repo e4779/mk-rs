@@ -301,8 +301,15 @@ fn dfs_cycle_check(
 /// - Any prerequisite has a newer mtime.
 /// - Any prerequisite is itself stale (recursive).
 ///
+/// When `force_intermediates` is false (default), non-existent intermediate
+/// targets (nodes with prereqs that don't exist on disk) are given a "pretend"
+/// mtime equal to the most recent prerequisite's mtime (F-069). If this
+/// pretend timestamp makes all dependents up to date, the intermediate is
+/// skipped (F-017). The `-i` flag sets `force_intermediates` to true,
+/// disabling this optimization (F-051).
+///
 /// Returns a Vec of stale node indices (deduplicated, topologically grouped).
-pub fn stale_nodes(graph: &Graph) -> Vec<NodeIndex> {
+pub fn stale_nodes(graph: &Graph, force_intermediates: bool) -> Vec<NodeIndex> {
     let n = graph.nodes.len();
     // Memoization: None = unvisited, Some(false) = not stale, Some(true) = stale
     let mut memo: Vec<Option<bool>> = vec![None; n];
@@ -311,19 +318,51 @@ pub fn stale_nodes(graph: &Graph) -> Vec<NodeIndex> {
     let mut in_result: Vec<bool> = vec![false; n];
 
     for &target_idx in &graph.targets {
-        check_stale(graph, target_idx, &mut memo, &mut result, &mut in_result);
+        check_stale(graph, target_idx, &mut memo, &mut result, &mut in_result, force_intermediates);
     }
 
     result
 }
 
+/// Compute the effective mtime of a node for staleness purposes.
+///
+/// For missing intermediate targets, this returns a "pretend" mtime equal
+/// to the most recent prerequisite's mtime (F-069). This allows dependents
+/// to check whether they would be up-to-date even without the intermediate.
+fn effective_mtime(
+    graph: &Graph,
+    idx: NodeIndex,
+    force_intermediates: bool,
+) -> Option<std::time::SystemTime> {
+    let node = &graph.nodes[idx.0];
+    let is_intermediate = graph.arcs.iter().any(|arc| arc.from == idx);
+    if !force_intermediates
+        && is_intermediate
+        && !node.flags.is_virtual()
+        && node.mtime.is_none()
+        && !node.arcs_in.is_empty()
+    {
+        // Missing intermediate: find most recent prereq mtime
+        node.arcs_in
+            .iter()
+            .filter_map(|&arc_idx| graph.nodes[graph.arcs[arc_idx.0].from.0].mtime)
+            .max()
+    } else {
+        node.mtime
+    }
+}
+
 /// Recursively check whether `idx` is stale. Uses memoization.
+///
+/// When `force_intermediates` is false, non-existent intermediates
+/// are given a pretend mtime equal to the most recent prereq's mtime.
 fn check_stale(
     graph: &Graph,
     idx: NodeIndex,
     memo: &mut [Option<bool>],
     result: &mut Vec<NodeIndex>,
     in_result: &mut [bool],
+    force_intermediates: bool,
 ) -> bool {
     // Return cached result
     if let Some(stale) = memo[idx.0] {
@@ -332,10 +371,12 @@ fn check_stale(
 
     let node = &graph.nodes[idx.0];
 
+    let eff_mtime = effective_mtime(graph, idx, force_intermediates);
+
     // Any stale prerequisite makes us stale
     let prereq_stale = node.arcs_in.iter().any(|&arc_idx| {
         let prereq_idx = graph.arcs[arc_idx.0].from;
-        check_stale(graph, prereq_idx, memo, result, in_result)
+        check_stale(graph, prereq_idx, memo, result, in_result, force_intermediates)
     });
 
     let stale = if node.flags.is_virtual() {
@@ -343,16 +384,18 @@ fn check_stale(
         prereq_stale
     } else {
         // File target
-        if node.mtime.is_none() {
-            // Doesn't exist → stale
+        if eff_mtime.is_none() {
+            // Doesn't exist and can't pretend → stale
             true
         } else {
-            // Check if any prereq is newer
+            let mtime = eff_mtime.unwrap();
+            // Check if any prereq is newer than our (possibly pretend) mtime
             prereq_stale
                 || node.arcs_in.iter().any(|&arc_idx| {
-                    let prereq = &graph.nodes[graph.arcs[arc_idx.0].from.0];
-                    match prereq.mtime {
-                        Some(pmtime) => pmtime > node.mtime.unwrap(),
+                    let prereq_idx = graph.arcs[arc_idx.0].from;
+                    let prereq_eff = effective_mtime(graph, prereq_idx, force_intermediates);
+                    match prereq_eff {
+                        Some(pmtime) => pmtime > mtime,
                         None => true, // prereq doesn't exist → target is stale
                     }
                 })
@@ -457,7 +500,6 @@ mod tests {
 
     #[test]
     fn stale_nonexistent_target() {
-        use std::io::Write;
         let dir = std::env::temp_dir().join("mk_test_graph");
         let _ = std::fs::create_dir_all(&dir);
         let prereq_path = dir.join("source.txt");
@@ -465,7 +507,7 @@ mod tests {
 
         let input = format!("target: {}\n", prereq_path.display());
         let g = graph_from_str(&input, &["target"]).unwrap();
-        let stale = stale_nodes(&g);
+        let stale = stale_nodes(&g, false);
         assert!(!stale.is_empty());
         assert!(stale.iter().any(|idx| g.nodes[idx.0].name == "target"));
 
@@ -474,7 +516,6 @@ mod tests {
 
     #[test]
     fn stale_prereq_newer() {
-        use std::io::Write;
         let dir = std::env::temp_dir().join("mk_test_stale");
         let _ = std::fs::create_dir_all(&dir);
         let target_path = dir.join("target.txt");
@@ -487,7 +528,7 @@ mod tests {
 
         let input = format!("{}: {}\n", target_path.display(), prereq_path.display());
         let g = graph_from_str(&input, &[&target_path.to_string_lossy()]).unwrap();
-        let stale = stale_nodes(&g);
+        let stale = stale_nodes(&g, false);
         assert!(!stale.is_empty());
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -495,7 +536,6 @@ mod tests {
 
     #[test]
     fn up_to_date() {
-        use std::io::Write;
         let dir = std::env::temp_dir().join("mk_test_uptodate");
         let _ = std::fs::create_dir_all(&dir);
         let target_path = dir.join("target.txt");
@@ -507,8 +547,54 @@ mod tests {
 
         let input = format!("{}: {}\n", target_path.display(), prereq_path.display());
         let g = graph_from_str(&input, &[&target_path.to_string_lossy()]).unwrap();
-        let stale = stale_nodes(&g);
+        let stale = stale_nodes(&g, false);
         assert!(stale.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn missing_intermediate_skipped() {
+        let dir = std::env::temp_dir().join("mk_test_intermed");
+        let _ = std::fs::create_dir_all(&dir);
+
+        // Create a source file (prereq) that exists
+        let source = dir.join("source.txt");
+        std::fs::write(&source, "data").unwrap();
+
+        // intermediate does NOT exist on disk
+        let intermediate = dir.join("intermediate.o");
+        let _ = std::fs::remove_file(&intermediate);
+
+        // target depends on intermediate, intermediate depends on source
+        let target = dir.join("target");
+
+        // Ensure target exists and is newer than source
+        std::fs::write(&target, "built").unwrap();
+
+        let input = format!(
+            "{}: {}\n{}: {}\n",
+            target.display(),
+            intermediate.display(),
+            intermediate.display(),
+            source.display(),
+        );
+
+        let g = graph_from_str(&input, &[&target.to_string_lossy()]).unwrap();
+
+        // Without -i: intermediate should be skipped (not stale)
+        let stale = stale_nodes(&g, false);
+        assert!(
+            !stale.iter().any(|idx| g.nodes[idx.0].name == intermediate.to_string_lossy()),
+            "intermediate should be skipped (not stale) when force_intermediates=false"
+        );
+
+        // With -i: intermediate should be forced stale
+        let stale_i = stale_nodes(&g, true);
+        assert!(
+            stale_i.iter().any(|idx| g.nodes[idx.0].name == intermediate.to_string_lossy()),
+            "intermediate should be stale when force_intermediates=true"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
