@@ -109,10 +109,10 @@
 
 | ID | Feature | Module | Phase | Status |
 |----|---------|--------|-------|--------|
-| F-020 | `-n` flag (dry-run) | `cli`, `sched` | 1a | ◐ (sched done) |
-| F-021 | `-e` flag (explain) | `cli`, `sched` | 1a | ◐ (sched done) |
-| F-022 | `-k` flag (keep going) | `cli`, `sched` | 1b | — |
-| F-047 | `-t` flag (touch) | `cli`, `sched` | 1b | — |
+| F-020 | `-n` flag (dry-run) | `cli`, `sched` | 1a | ✓ |
+| F-021 | `-e` flag (explain) | `cli`, `sched` | 1a | ✓ |
+| F-022 | `-k` flag (keep going) | `cli`, `sched` | 1b | ◐ (sched done) |
+| F-047 | `-t` flag (touch) | `cli`, `sched` | 1b | ◐ (sched done) |
 | F-048 | `-w` flag (what-if) | `cli`, `graph` | 2 | — |
 | F-049 | `-a` flag (always make) | `cli`, `graph` | 1b | — |
 | F-050 | `-d[egp]` debugging | `cli` | 3 | — |
@@ -137,8 +137,8 @@
 
 | Phase | Progress | Feature count | What it covers |
 |-------|:---:|:---:|---|
-| **1a** | ███████░ 20/22 | 22 | Parser, DAG, serial exec, core variables, attrs, scheduling |
-| **1b** | ░░░░░░░░ 0/12 | 12 | Include `< file`, prereq/target vars, missing intermediates, E/U attrs |
+| **1a** | ████████ 22/22 ✅ | 22 | Parser, DAG, serial exec, core variables, attrs, scheduling |
+| **1b** | █░░░░░░░ 2/12 | 12 | Include `< file`, prereq/target vars, missing intermediates, E/U attrs |
 | **2** | ░░░░░░░░ 0/22 | 22 | %/&/R metarules, transitive closure, pruning, NPROC parallel |
 | **3** | ░░░░░░░░ 0/10 | 10 | Aggregates, `<| cmd`, P attribute, dynamic mkfile, -d debug |
 | **P3** | ░░░░░░░░ 0/4 | 4 | Plan 9 specifics ($O, membername) |
