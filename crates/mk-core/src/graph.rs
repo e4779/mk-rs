@@ -172,7 +172,21 @@ fn match_ampersand(target: &str, pattern: &str) -> Option<String> {
 ///
 /// Returns an error if a cycle is detected or a requested target has no rule
 /// and does not exist on the filesystem.
+/// Uses default NREP = 1 (each metarule applied at most once per expansion chain).
 pub fn build_graph(stmts: &[Stmt], target_names: &[String]) -> Result<Graph, GraphError> {
+    build_graph_with_nrep(stmts, target_names, 1)
+}
+
+/// Build a DAG with explicit NREP depth limit for metarule expansion.
+///
+/// NREP limits how many times metarules are applied recursively in a single
+/// dependency chain. E.g. NREP=1 means `%.z` is applied once; NREP=2 allows
+/// `target -> source.z -> source.z.z`.
+pub fn build_graph_with_nrep(
+    stmts: &[Stmt],
+    target_names: &[String],
+    nrep: usize,
+) -> Result<Graph, GraphError> {
     // 1. Collect concrete rules, index by target
     let rules: Vec<&Rule> = stmts
         .iter()
@@ -237,6 +251,8 @@ pub fn build_graph(stmts: &[Stmt], target_names: &[String]) -> Result<Graph, Gra
         metarules: &[&'a Rule],
         regex_rules: &[&'a Rule],
         name_to_index: &mut HashMap<String, NodeIndex>,
+        nrep: usize,
+        depth: usize,
         name: &str,
     ) -> NodeIndex {
         if let Some(&idx) = name_to_index.get(name) {
@@ -262,10 +278,13 @@ pub fn build_graph(stmts: &[Stmt], target_names: &[String]) -> Result<Graph, Gra
                 }
             }
 
-            // Phase 1a: use first rule's prereqs only
+            // Phase 1a: use first rule's prereqs only (concrete rules don't increment depth)
             let rule = rules[0];
             for prereq in &rule.prereqs {
-                let prereq_idx = build_node(graph, rules_by_target, metarules, regex_rules, name_to_index, prereq);
+                let prereq_idx = build_node(
+                    graph, rules_by_target, metarules, regex_rules, name_to_index,
+                    nrep, depth, prereq,
+                );
                 let arc_idx = ArcIndex(graph.arcs.len());
                 graph.nodes[idx.0].arcs_in.push(arc_idx);
                 graph.arcs.push(Arc {
@@ -275,10 +294,16 @@ pub fn build_graph(stmts: &[Stmt], target_names: &[String]) -> Result<Graph, Gra
                     is_meta: false,
                 });
             }
-        } else {
-            // No concrete rule — try % and & metarules first
+        } else if depth < nrep {
+            // No concrete rule, depth allows metarule expansion
             let mut matched = false;
             for metarule in metarules {
+                // F-027: n attribute — skip metarule if target doesn't exist on fs
+                if metarule.attributes.is_no_virtual() {
+                    if !std::path::Path::new(name).exists() {
+                        continue;
+                    }
+                }
                 if let Some(stem) = match_metarule(name, &metarule.targets[0]) {
                     if metarule.attributes.is_virtual() {
                         graph.nodes[idx.0].flags.set(NodeFlags::VIRTUAL);
@@ -288,7 +313,8 @@ pub fn build_graph(stmts: &[Stmt], target_names: &[String]) -> Result<Graph, Gra
                     for prereq in &metarule.prereqs {
                         let prereq = prereq.replace('%', &stem).replace('&', &stem);
                         let prereq_idx = build_node(
-                            graph, rules_by_target, metarules, regex_rules, name_to_index, &prereq,
+                            graph, rules_by_target, metarules, regex_rules, name_to_index,
+                            nrep, depth + 1, &prereq,
                         );
                         let arc_idx = ArcIndex(graph.arcs.len());
                         graph.nodes[idx.0].arcs_in.push(arc_idx);
@@ -333,7 +359,8 @@ pub fn build_graph(stmts: &[Stmt], target_names: &[String]) -> Result<Graph, Gra
 
                             for prereq in &prereqs {
                                 let prereq_idx = build_node(
-                                    graph, rules_by_target, metarules, regex_rules, name_to_index, prereq,
+                                    graph, rules_by_target, metarules, regex_rules, name_to_index,
+                                    nrep, depth + 1, prereq,
                                 );
                                 let arc_idx = ArcIndex(graph.arcs.len());
                                 graph.nodes[idx.0].arcs_in.push(arc_idx);
@@ -355,7 +382,10 @@ pub fn build_graph(stmts: &[Stmt], target_names: &[String]) -> Result<Graph, Gra
     }
 
     for target in &targets {
-        let idx = build_node(&mut graph, &rules_by_target, &metarules, &regex_rules, &mut name_to_index, target);
+        let idx = build_node(
+            &mut graph, &rules_by_target, &metarules, &regex_rules, &mut name_to_index,
+            nrep, 0, target,
+        );
         graph.targets.push(idx);
     }
 
@@ -911,5 +941,114 @@ mod tests {
         let g = graph_from_str(input, &["target"]).unwrap();
         let target = g.nodes.iter().find(|n| n.name == "target").unwrap();
         assert!(target.flags.is_virtual());
+    }
+
+    // ── n attribute (no-virtual) ──────────────────────────────────────
+
+    /// Helper: parse mkfile text and build graph with explicit NREP.
+    fn graph_with_nrep_from_str(
+        input: &str,
+        targets: &[&str],
+        nrep: usize,
+    ) -> Result<Graph, GraphError> {
+        let tokens = tokenize(input, ShellMode::Sh).unwrap();
+        let stmts = parse::parse(&tokens).unwrap();
+        let target_names: Vec<String> = targets.iter().map(|s| s.to_string()).collect();
+        build_graph_with_nrep(&stmts, &target_names, nrep)
+    }
+
+    #[test]
+    fn n_attribute_target_exists() {
+        // metarule with :n: should match an existing file on disk
+        let dir = std::env::temp_dir().join("mk_test_n_attr");
+        let _ = std::fs::create_dir_all(&dir);
+        let c_file = dir.join("hello.c");
+        std::fs::write(&c_file, "int main(){}").unwrap();
+        let o_path = dir.join("hello.o");
+        // hello.o does NOT exist, but we only check the metarule n flag on the TARGET
+        // The n flag on the metarule checks whether the target exists
+        // Here: %.o:n: %.c — n means the metarule only applies if target exists on fs
+        // hello.o doesn't exist, so the metarule should NOT match
+        let input = format!(
+            "%.o:n: %.c\nprog: {}\n",
+            o_path.display()
+        );
+        let g = graph_from_str(&input, &["prog"]).unwrap();
+        // hello.o node should have no arcs (metarule skipped due to n flag + target not on fs)
+        let o_node = g.nodes.iter().find(|n| n.name == o_path.to_string_lossy()).unwrap();
+        assert!(o_node.arcs_in.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn n_attribute_skips_nonexistent() {
+        // metarule with :n: should NOT match non-existent file.
+        // ghost.o doesn't exist on fs, so the n: metarule is skipped →
+        // ghost.o gets no arcs (it's a leaf external file reference).
+        let input = "%.o:n: %.c\nprog: ghost.o\n";
+        let g = graph_from_str(input, &["prog"]).unwrap();
+        // prog depends on ghost.o, but ghost.o got no metarule match
+        let ghost = g.nodes.iter().find(|n| n.name == "ghost.o").unwrap();
+        assert!(ghost.arcs_in.is_empty(), "n: metarule should be skipped for non-existent ghost.o");
+    }
+
+    #[test]
+    fn n_attribute_allows_existing() {
+        // metarule with :n: SHOULD match an existing file
+        let dir = std::env::temp_dir().join("mk_test_n_exists");
+        let _ = std::fs::create_dir_all(&dir);
+        let c_file = dir.join("real.c");
+        std::fs::write(&c_file, "int main(){}").unwrap();
+        let o_file = dir.join("real.o");
+        // Create real.o so n: metarule applies
+        std::fs::write(&o_file, "object").unwrap();
+        let input = format!("%.o:n: %.c\n", );
+        let g = graph_from_str(&input, &[&o_file.to_string_lossy()]).unwrap();
+        assert!(g.nodes.len() >= 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── NREP depth limit ─────────────────────────────────────────────
+
+    #[test]
+    fn nrep_limits_recursion_depth_1() {
+        // NREP=1: %.z applied once → target → source.z (one level)
+        let input = "%: %.z\n\tcp $prereq $target\ntarget: source\n";
+        let g = graph_with_nrep_from_str(input, &["target"], 1).unwrap();
+        // 3 nodes: target, source, source.z
+        assert_eq!(g.nodes.len(), 3);
+        let source_node = g.nodes.iter().find(|n| n.name == "source").unwrap();
+        // source should have source.z as prereq (metarule applied at depth 0)
+        assert!(!source_node.arcs_in.is_empty());
+        let prereq_idx = g.arcs[source_node.arcs_in[0].0].from;
+        assert_eq!(g.nodes[prereq_idx.0].name, "source.z");
+        // source.z should be a leaf (metarule blocked at depth 1)
+        let z_node = &g.nodes[prereq_idx.0];
+        assert!(z_node.arcs_in.is_empty());
+    }
+
+    #[test]
+    fn nrep_limits_recursion_depth_2() {
+        // NREP=2: %.z applied twice → target → source.z → source.z.z
+        let input = "%: %.z\ntarget: source\n";
+        let g = graph_with_nrep_from_str(input, &["target"], 2).unwrap();
+        // 4 nodes: target, source, source.z, source.z.z
+        assert_eq!(g.nodes.len(), 4);
+        let z_node = g.nodes.iter().find(|n| n.name == "source.z").unwrap();
+        assert!(!z_node.arcs_in.is_empty());
+        let z_prereq_idx = g.arcs[z_node.arcs_in[0].0].from;
+        assert_eq!(g.nodes[z_prereq_idx.0].name, "source.z.z");
+        // source.z.z should be a leaf
+        let zz_node = &g.nodes[z_prereq_idx.0];
+        assert!(zz_node.arcs_in.is_empty());
+    }
+
+    #[test]
+    fn nrep_default_is_1() {
+        // Default NREP=1 via build_graph
+        let input = "%: %.z\ntarget: source\n";
+        let g = graph_from_str(input, &["target"]).unwrap();
+        // Should be same as NREP=1: 3 nodes
+        assert_eq!(g.nodes.len(), 3);
     }
 }

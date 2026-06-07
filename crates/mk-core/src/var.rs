@@ -53,6 +53,33 @@ fn find_end_of_name(s: &str, start: usize) -> usize {
         .map_or(s.len(), |pos| start + pos)
 }
 
+/// Execute a sh-style or rc-style backtick command and return its stdout.
+///
+/// sh style:  `echo a.c b.c`
+/// rc style:  `{echo hello}`
+/// If the value doesn't start with a backtick, it is returned unchanged.
+pub fn expand_backtick(value: &str) -> String {
+    let cmd = if value.starts_with("`{") && value.ends_with("}`") {
+        &value[2..value.len() - 2]
+    } else if value.starts_with('`') && value.ends_with('`') {
+        &value[1..value.len() - 1]
+    } else {
+        return value.to_string();
+    };
+
+    match std::process::Command::new("sh")
+        .arg("-c")
+        .arg(cmd)
+        .output()
+    {
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            stdout.trim().to_string()
+        }
+        Err(_) => String::new(),
+    }
+}
+
 // ── Scope: construction ────────────────────────────────────────────────────
 
 impl Scope {
@@ -82,8 +109,9 @@ impl Scope {
                 return false;
             }
         }
+        let expanded = expand_backtick(value);
         self.vars
-            .insert(name.to_string(), (value.to_string(), prec));
+            .insert(name.to_string(), (expanded, prec));
         true
     }
 
@@ -668,6 +696,20 @@ mod tests {
         let map = child.export();
         assert_eq!(map.get("PARENT_VAR").map(|s| s.as_str()), Some("p"));
         assert_eq!(map.get("CHILD_VAR").map(|s| s.as_str()), Some("c"));
+    }
+
+    #[test]
+    fn backtick_expansion() {
+        let mut s = Scope::new();
+        s.set("FILES", "`echo a.c b.c`", Precedence::Mkfile);
+        assert_eq!(s.get("FILES"), Some("a.c b.c"));
+    }
+
+    #[test]
+    fn backtick_rc_style() {
+        let mut s = Scope::new();
+        s.set("FILES", "`{echo hello}`", Precedence::Mkfile);
+        assert_eq!(s.get("FILES"), Some("hello"));
     }
 
     #[test]

@@ -153,6 +153,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut graph = build_graph(&stmts, &target_names)?;
 
     // Build sched options from CLI flags
+    let mkflags = std::env::args()
+        .skip(1)
+        .filter(|a| a.starts_with('-') || a.contains('='))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let mkargs = std::env::args()
+        .skip(1)
+        .filter(|a| !a.starts_with('-') && !a.contains('='))
+        .collect::<Vec<_>>()
+        .join(" ");
+
     let opts = SchedOptions {
         keep_going: cli.keep_going,
         no_exec: cli.no_exec,
@@ -162,6 +173,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         all: cli.all,
         nproc: 1, // sequential by default; $NPROC env var overrides
         force_intermediates: cli.force_intermediates,
+        mkflags,
+        mkargs,
     };
 
     // Build environment from variable scope
