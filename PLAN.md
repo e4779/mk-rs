@@ -873,13 +873,15 @@ mkfile:
 
 ### Phase overview
 
-| Phase | Features | Effort | What you can do after |
-|-------|:---:|--------|-----------------------|
-| **1a** — Core MVP | 22 | ~2 weeks | Build a C program from explicit rules |
-| **1b** — Variables & includes | 12 | ~1.5 weeks | Multi-file projects with `< file` includes |
-| **2** — Metarules & parallel | 22 | ~2.5 weeks | `%.o: %.c` patterns, NPROC parallel builds |
-| **3** — Aggregates & polish | 10 | ~2 weeks | Full plan9port mk compatibility |
-| **Deferred** — Plan 9 specifics | 4 | — | `$O`, `membername`, stdout-as-mkfile |
+| Phase | Features | Effort | What you can do after | Progress |
+|-------|:---:|--------|-----------------------|:--------:|
+| **1a** — Core MVP | 22 | ~2 weeks | Build a C program from explicit rules | 5/22 ██░░ |
+| **1b** — Variables & includes | 12 | ~1.5 weeks | Multi-file projects with `< file` includes | 0/12 |
+| **2** — Metarules & parallel | 22 | ~2.5 weeks | `%.o: %.c` patterns, NPROC parallel builds | 0/22 |
+| **3** — Aggregates & polish | 10 | ~2 weeks | Full plan9port mk compatibility | 0/10 |
+| **Deferred** — Plan 9 specifics | 4 | — | `$O`, `membername`, stdout-as-mkfile | 0/4 |
+
+*Phase 1a modules done: `lex` (✓), `attr` (✓), `error` (✓). Next: `parse`, `graph`.*
 
 ### Phase 1a: Core parser + serial execution (REAL MVP)
 
