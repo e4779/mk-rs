@@ -57,14 +57,14 @@
 |----|---------|--------|-------|--------|
 | F-006 | Whole-DAG construction before execution | `graph` | 1a | ✓ |
 | F-008 | Timestamp-based staleness | `graph` | 1a | ✓ |
-| F-017 | Missing intermediate targets | `graph` | 1b | — |
+| F-017 | Missing intermediate targets | `graph` | 1b | ✓ |
 | F-018 | Multiple rules for same target (prereq merging) | `parse`, `graph` | 1a | ◐ (parse done) |
 | F-059 | Cycle detection and rejection | `graph` | 1a | ✓ |
 | F-060 | Pruning irrelevant subgraphs | `graph` | 2 | — |
 | F-061 | Uniqueness of derivation | `graph` | 2 | — |
 | F-062 | Longest-path-first execution order | `graph`, `sched` | 1b | ◐ (sched done) |
 | F-065 | Identical rule headers override | `parse` | 1a | ✓ |
-| F-069 | Non-existent file targets get pretend timestamp | `graph` | 1b | — |
+| F-069 | Non-existent file targets get pretend timestamp | `graph` | 1b | ✓ |
 
 ## Parallel Execution
 
@@ -111,12 +111,12 @@
 |----|---------|--------|-------|--------|
 | F-020 | `-n` flag (dry-run) | `cli`, `sched` | 1a | ✓ |
 | F-021 | `-e` flag (explain) | `cli`, `sched` | 1a | ✓ |
-| F-022 | `-k` flag (keep going) | `cli`, `sched` | 1b | ◐ (sched done) |
-| F-047 | `-t` flag (touch) | `cli`, `sched` | 1b | ◐ (sched done) |
+| F-022 | `-k` flag (keep going) | `cli`, `sched` | 1b | ✓ |
+| F-047 | `-t` flag (touch) | `cli`, `sched` | 1b | ✓ |
 | F-048 | `-w` flag (what-if) | `cli`, `graph` | 2 | — |
-| F-049 | `-a` flag (always make) | `cli`, `graph` | 1b | — |
+| F-049 | `-a` flag (always make) | `cli`, `graph` | 1b | ✓ |
 | F-050 | `-d[egp]` debugging | `cli` | 3 | — |
-| F-051 | `-i` flag (force intermediates) | `cli`, `graph` | 1b | — |
+| F-051 | `-i` flag (force intermediates) | `cli`, `graph` | 1b | ✓ |
 
 ## Aggregates
 
@@ -138,7 +138,7 @@
 | Phase | Progress | Feature count | What it covers |
 |-------|:---:|:---:|---|
 | **1a** | ████████ 22/22 ✅ | 22 | Parser, DAG, serial exec, core variables, attrs, scheduling |
-| **1b** | ███░░░░░ 5/12 | 12 | Include `< file`, prereq/target vars, missing intermediates, E/U attrs |
+| **1b** | ███████░ 10/12 | 12 | Include `< file`, prereq/target vars, missing intermediates, flags |
 | **2** | ░░░░░░░░ 0/22 | 22 | %/&/R metarules, transitive closure, pruning, NPROC parallel |
 | **3** | ░░░░░░░░ 0/10 | 10 | Aggregates, `<| cmd`, P attribute, dynamic mkfile, -d debug |
 | **P3** | ░░░░░░░░ 0/4 | 4 | Plan 9 specifics ($O, membername) |
