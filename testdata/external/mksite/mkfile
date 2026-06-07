@@ -1,0 +1,52 @@
+# vim: ft=makefile
+MKSHELL=$PLAN9/bin/rc
+md=`{du -a md | awk '{print $2}'}
+gen=`{du -a gen | awk '{print $2}'}
+
+md_files=`{9 ls -ld $md | grep '^-' | awk '{print $10}' | grep '\.md$'}
+md_dirs=`{9 ls -ld $md | grep '^d' | awk '{print $10 "/"}'}
+dateprog=/bin/date
+
+CC=cc
+LD=cc
+CFLAGS=
+LDFLAGS=
+
+all:V: gend/blog/rss.xml gend/blog/index.html ${md_dirs:md/%/=html/%/} ${md_files:md/%.md=html/%.html} $dateprog
+
+html/%/ gend/%/:
+	mkdir -p $target
+
+html/(.*)/([^/]*)\.html:R: md/\1/\2.md
+	source=md/$stem1/$stem2.md
+	fn list_file {
+		dir=md/$stem1
+		last=''
+		while(! ~ $last .) {
+			test -f $dir/$1 && echo $dir/$1
+			last=$dir
+			dir=`{dirname $dir}
+		}
+	}
+	
+	{sed -n '/^===$/,/^===$/p' $source | sed '1d;$d' | cat `{list_file pre | 9 tail -r} - `{list_file post}} | 9 rc > $target
+
+gend/(.+)/([^/]+):R: gend/\1/ gen/\1/\2 $md_files
+	prereqs=($prereq)
+	stm1=$stem1 stm2=$stem2
+	mk -f $prereqs(2) $target
+
+/bin/date:V:
+./date: date.o
+	$LD $LDFLAGS $prereq -o $target
+date.o: date.c
+	$CC $CFLAGS -c $prereq -o $target
+
+clean:V:
+	rm -rf html/blog *.o date gend dist
+
+dist: all
+	! test -d $target && mkdir $target
+	cp -rf assets/* html/* $target
+	cp gend/blog/rss.xml gend/blog/index.html $target/blog
+	for (file in `{du -a dist | awk '{print $2}' | grep '\.html$'}) tidy -iq $file | sponge $file
