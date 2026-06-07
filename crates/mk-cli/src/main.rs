@@ -3,19 +3,20 @@
 // Plan 9 mk compatible build tool.
 // Thin wrapper around mk-core: parse args → read mkfile → build DAG → execute.
 
+use std::io::IsTerminal;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 use clap::Parser;
 
-use mk_core::graph::build_graph;
-use mk_core::lex::{tokenize, ShellMode};
-use mk_core::parse::Stmt;
-use mk_core::sched::{execute, ResolvedRule, SchedOptions};
-use mk_core::var::{builtin_scope, import_env, Precedence};
-use mk_shell::ShShell;
+use mk_rs_core::graph::build_graph;
+use mk_rs_core::lex::{tokenize, ShellMode};
+use mk_rs_core::parse::Stmt;
+use mk_rs_core::sched::{execute, ResolvedRule, SchedOptions};
+use mk_rs_core::var::{builtin_scope, import_env, Precedence};
+use mk_rs_shell::ShShell;
 #[cfg(feature = "duckscript")]
-use mk_shell::DuckShell;
+use mk_rs_shell::DuckShell;
 
 /// mk — maintain (make) related files
 ///
@@ -52,9 +53,13 @@ struct Cli {
     #[arg(short = 'i')]
     force_intermediates: bool,
 
-    /// Silent mode: don't print recipes before execution
-    #[arg(short = 's')]
+    /// Quiet mode: don't print recipes before execution
+    #[arg(short = 'q')]
     silent: bool,
+
+    /// Color output: auto, always, never
+    #[arg(long, default_value = "auto")]
+    color: String,
 
     /// Debug output: p (parse), g (graph), e (execution) (stub — Phase 2)
     #[arg(short = 'd')]
@@ -128,7 +133,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     // Lex + Parse
     let tokens = tokenize(&input, ShellMode::Sh)?;
-    let stmts = mk_core::parse::parse(&tokens)?;
+    let stmts = mk_rs_core::parse::parse(&tokens)?;
 
     // Build variable scope: built-ins, environment, mkfile assignments
     let mut scope = builtin_scope();
@@ -203,7 +208,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mkshell = scope.get("MKSHELL").unwrap_or("/bin/sh").to_string();
 
     // Select shell via $MKSHELL
-    let shell: Box<dyn mk_core::shell::Shell> = {
+    let shell: Box<dyn mk_rs_core::shell::Shell> = {
         if mkshell.contains("duckscript") || mkshell.ends_with(".ds") {
             #[cfg(not(feature = "duckscript"))]
             {
@@ -232,6 +237,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .collect::<Vec<_>>()
         .join(" ");
 
+    // Resolve --color flag to a boolean
+    let use_color = match cli.color.as_str() {
+        "always" => true,
+        "never" => false,
+        _ => std::io::stderr().is_terminal(),
+    };
+
     let opts = SchedOptions {
         keep_going: cli.keep_going,
         no_exec: cli.no_exec,
@@ -244,6 +256,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         mkshell: shell.name().to_string(),
         mkflags,
         mkargs,
+        color: use_color,
     };
 
     // Build environment from variable scope

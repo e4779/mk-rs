@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
-use mk_core::shell::{Shell, ShellResult, ShellError};
+use mk_rs_core::shell::{Shell, ShellResult, ShellError};
 
 /// POSIX /bin/sh shell implementation.
 #[derive(Debug, Clone)]

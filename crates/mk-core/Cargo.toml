@@ -1,8 +1,12 @@
 [package]
-name = "mk-core"
+name = "mk-rs-core"
 version = "0.1.0"
 edition = "2021"
 description = "mk-rust core: lexer, parser, DAG builder, scheduler"
+license = "MIT"
+repository = "https://github.com/YOU/mk-rs"
+keywords = ["mk", "make", "build", "plan9"]
+categories = ["development-tools::build-utils"]
 
 [dependencies]
 thiserror = "2"

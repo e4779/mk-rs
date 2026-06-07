@@ -38,7 +38,7 @@ pub struct Recipe {
 /// Options controlling recipe execution behavior.
 ///
 /// These correspond to CLI flags: -n (no-exec), -e (explain),
-/// -t (touch), -s (silent).
+/// -t (touch), -q (quiet).
 #[derive(Debug, Clone, Default)]
 pub struct RecipeOptions {
     /// -n flag: print recipes but don't execute.
@@ -47,8 +47,10 @@ pub struct RecipeOptions {
     pub explain: bool,
     /// -t flag: touch targets instead of running recipes.
     pub touch: bool,
-    /// -s flag: silent — don't print recipes (like Q attribute).
+    /// -q flag: quiet — don't print recipes (like Q attribute).
     pub silent: bool,
+    /// Whether to use ANSI color in recipe output.
+    pub color: bool,
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────
@@ -64,7 +66,7 @@ pub struct RecipeOptions {
 /// # Examples
 ///
 /// ```
-/// let elided = mk_core::recipe::elide_first_char("\techo hello\n\techo world");
+/// let elided = mk_rs_core::recipe::elide_first_char("\techo hello\n\techo world");
 /// assert_eq!(elided, "echo hello\necho world");
 /// ```
 pub fn elide_first_char(recipe: &str) -> String {
@@ -112,9 +114,17 @@ pub fn run(
     let quiet = opts.silent || recipe.attributes.is_quiet();
 
     if !quiet {
-        eprintln!("{}:", recipe.target);
-        for line in script.lines() {
-            eprintln!("\t{line}");
+        if opts.color {
+            // ANSI: bold target, dim recipe lines
+            eprintln!("\x1b[1m{}:\x1b[0m", recipe.target);
+            for line in script.lines() {
+                eprintln!("\x1b[2m\t{line}\x1b[0m");
+            }
+        } else {
+            eprintln!("{}:", recipe.target);
+            for line in script.lines() {
+                eprintln!("\t{line}");
+            }
         }
     }
 

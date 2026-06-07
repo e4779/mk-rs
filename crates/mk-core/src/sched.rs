@@ -46,10 +46,12 @@ pub struct SchedOptions {
     pub explain: bool,
     /// -t: touch targets instead of executing
     pub touch: bool,
-    /// -s: silent (don't print recipes)
+    /// -q: quiet (don't print recipes)
     pub silent: bool,
     /// -a: assume all targets are out of date
     pub all: bool,
+    /// --color: "always" = true
+    pub color: bool,
     /// -i: force missing intermediate targets to be built (F-017, F-051)
     pub force_intermediates: bool,
     /// -p N: number of parallel jobs (0 = read $NPROC, 1 = sequential).
@@ -68,6 +70,7 @@ impl Default for SchedOptions {
             explain: false,
             touch: false,
             silent: false,
+            color: false,
             all: false,
             force_intermediates: false,
             nproc: 1,
@@ -246,6 +249,7 @@ pub fn execute(
         explain: opts.explain,
         touch: opts.touch,
         silent: opts.silent,
+        color: opts.color,
     };
 
     let mut built: Vec<String> = Vec::new();
@@ -371,6 +375,7 @@ fn run_parallel(
         explain: opts.explain,
         touch: opts.touch,
         silent: opts.silent,
+        color: opts.color,
     };
 
     let ready: Arc<Mutex<VecDeque<NodeIndex>>> = Arc::new(Mutex::new(VecDeque::new()));

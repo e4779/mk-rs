@@ -883,16 +883,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "mk-cli"
+name = "mk-rs"
 version = "0.1.0"
 dependencies = [
  "clap",
- "mk-core",
- "mk-shell",
+ "mk-rs-core",
+ "mk-rs-shell",
 ]
 
 [[package]]
-name = "mk-core"
+name = "mk-rs-core"
 version = "0.1.0"
 dependencies = [
  "regex",
@@ -900,12 +900,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "mk-shell"
+name = "mk-rs-shell"
 version = "0.1.0"
 dependencies = [
  "duckscript",
  "duckscriptsdk",
- "mk-core",
+ "mk-rs-core",
 ]
 
 [[package]]
