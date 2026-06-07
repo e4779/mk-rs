@@ -22,7 +22,7 @@
 | F-012 | Line continuation: `\<newline>` | `lex` | 1a | ✓ |
 | F-013 | Includes: `< file` | `include`, `parse` | 1b | — |
 | F-014 | First target as default | `graph`, `cli` | 1a | ◐ (graph done) |
-| F-045 | Rule header evaluated at parse time | `parse`, `var` | 1a | ◐ (parse done) |
+| F-045 | Rule header evaluated at parse time | `parse`, `var` | 1a | ✓ |
 | F-063 | Backquote command substitution in mkfile | `lex`, `var` | 1b | ◐ (lex done) |
 | F-066 | Glob expansion in assignments | `var` | 2 | — |
 | F-067 | `-f mkfile` flag | `cli` | 1a | — |
@@ -32,7 +32,7 @@
 | ID | Feature | Module | Phase | Status |
 |----|---------|--------|-------|--------|
 | F-002 | Variables: `$VAR` / `${VAR}` | `var` | 1a | ✓ |
-| F-003 | Assignment: `VAR=value` | `parse`, `var` | 1a | ◐ (parse done) |
+| F-003 | Assignment: `VAR=value` | `parse`, `var` | 1a | ✓ |
 | F-039 | Namelist transform: `${VAR:A%B=C%D}` | `var` | 2 | — |
 | F-040 | Environment variable import | `var` | 1a | ✓ |
 | F-041 | Variable precedence (cmdline > file > env > builtin) | `var` | 1a | ✓ |
@@ -62,8 +62,8 @@
 | F-059 | Cycle detection and rejection | `graph` | 1a | ✓ |
 | F-060 | Pruning irrelevant subgraphs | `graph` | 2 | — |
 | F-061 | Uniqueness of derivation | `graph` | 2 | — |
-| F-062 | Longest-path-first execution order | `graph`, `sched` | 1b | — |
-| F-065 | Identical rule headers override | `parse` | 1a | — |
+| F-062 | Longest-path-first execution order | `graph`, `sched` | 1b | ◐ (sched done) |
+| F-065 | Identical rule headers override | `parse` | 1a | ✓ |
 | F-069 | Non-existent file targets get pretend timestamp | `graph` | 1b | — |
 
 ## Parallel Execution
@@ -78,8 +78,8 @@
 
 | ID | Feature | Module | Phase | Status |
 |----|---------|--------|-------|--------|
-| F-015 | Recipe as shell script block | `recipe`, `shell` | 1a | — |
-| F-016 | First-char elision in recipes | `recipe` | 1a | — |
+| F-015 | Recipe as shell script block | `recipe`, `shell` | 1a | ✓ |
+| F-016 | First-char elision in recipes | `recipe` | 1a | ✓ |
 | F-033 | `$target` variable | `var`, `recipe` | 1b | — |
 | F-034 | `$prereq` variable | `var`, `recipe` | 1b | — |
 | F-035 | `$stem` variable | `var`, `recipe` | 2 | — |
@@ -109,8 +109,8 @@
 
 | ID | Feature | Module | Phase | Status |
 |----|---------|--------|-------|--------|
-| F-020 | `-n` flag (dry-run) | `cli`, `sched` | 1a | — |
-| F-021 | `-e` flag (explain) | `cli`, `sched` | 1a | — |
+| F-020 | `-n` flag (dry-run) | `cli`, `sched` | 1a | ◐ (sched done) |
+| F-021 | `-e` flag (explain) | `cli`, `sched` | 1a | ◐ (sched done) |
 | F-022 | `-k` flag (keep going) | `cli`, `sched` | 1b | — |
 | F-047 | `-t` flag (touch) | `cli`, `sched` | 1b | — |
 | F-048 | `-w` flag (what-if) | `cli`, `graph` | 2 | — |
@@ -137,7 +137,7 @@
 
 | Phase | Progress | Feature count | What it covers |
 |-------|:---:|:---:|---|
-| **1a** | █████░░░ 12/22 | 22 | Parser, basic DAG, serial exec with sh, core variables, V/N/Q attrs |
+| **1a** | ███████░ 20/22 | 22 | Parser, DAG, serial exec, core variables, attrs, scheduling |
 | **1b** | ░░░░░░░░ 0/12 | 12 | Include `< file`, prereq/target vars, missing intermediates, E/U attrs |
 | **2** | ░░░░░░░░ 0/22 | 22 | %/&/R metarules, transitive closure, pruning, NPROC parallel |
 | **3** | ░░░░░░░░ 0/10 | 10 | Aggregates, `<| cmd`, P attribute, dynamic mkfile, -d debug |
