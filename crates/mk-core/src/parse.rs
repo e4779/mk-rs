@@ -28,6 +28,8 @@ pub struct Rule {
     pub is_metarule: bool,
     pub is_regex: bool,
     pub line: usize,
+    /// Custom comparison program from P: attribute (e.g., "Pcmp" → Some("cmp")).
+    pub prog: Option<String>,
 }
 
 /// Variable assignment.
@@ -261,13 +263,16 @@ fn parse_rule(
 
     // Check for attributes between colons: `target:VQ: prereq`
     let mut attrs = Attributes::new();
+    let mut prog: Option<String> = None;
     if *pos < tokens.len()
         && matches!(&tokens[*pos], Token::Word(_))
         && *pos + 1 < tokens.len()
         && matches!(&tokens[*pos + 1], Token::Colon)
     {
         if let Token::Word(attr_str) = &tokens[*pos] {
-            attrs = parse_attributes(attr_str).map_err(|e| match e {
+            let (clean_attr_str, extracted_prog) = extract_prog_from_attr(attr_str);
+            prog = extracted_prog;
+            attrs = parse_attributes(&clean_attr_str).map_err(|e| match e {
                 ParseAttrError::UnknownAttr(c) => ParseError::UnknownAttr {
                     attr: c,
                     line: start_line,
@@ -307,7 +312,46 @@ fn parse_rule(
         is_metarule,
         is_regex,
         line: start_line,
+        prog,
     })
+}
+
+// ── attribute helpers ─────────────────────────────────────────────────────
+
+/// Valid attribute characters (used for extracting P program name).
+const VALID_ATTR_CHARS: &[char] = &['V', 'Q', 'N', 'U', 'D', 'E', 'P', 'R', 'n'];
+
+/// Extract the custom comparison program name from a P attribute.
+///
+/// In Plan 9 mk, `target:Pprog: prereq` attaches the P attribute with a
+/// program name directly following the P. E.g., `"Pcmp"` → P attr + program
+/// `"cmp"`. The program name is all non-attribute characters after P until
+/// the next attribute character or end of string.
+///
+/// Returns the cleaned attribute string (program chars removed) and the
+/// optional program name.
+fn extract_prog_from_attr(attr_str: &str) -> (String, Option<String>) {
+    if let Some(p_pos) = attr_str.find('P') {
+        let before = &attr_str[..p_pos];
+        let after = &attr_str[p_pos + 1..];
+
+        // Program name: non-attr chars after P
+        let prog_end = after
+            .find(|c: char| VALID_ATTR_CHARS.contains(&c))
+            .unwrap_or(after.len());
+        let prog = &after[..prog_end];
+
+        // Reconstruct attr string: before + 'P' + remaining attrs after prog
+        let clean = format!("{}P{}", before, &after[prog_end..]);
+        let prog = if prog.is_empty() {
+            None
+        } else {
+            Some(prog.to_string())
+        };
+        (clean, prog)
+    } else {
+        (attr_str.to_string(), None)
+    }
 }
 
 // ── recipe parsing ─────────────────────────────────────────────────────────
@@ -592,6 +636,74 @@ mod tests {
             Stmt::Rule(r) => {
                 assert_eq!(r.targets, vec!["target"]);
                 assert_eq!(r.prereqs, vec!["prereq"]);
+            }
+            _ => panic!("expected Rule"),
+        }
+    }
+
+    #[test]
+    fn p_attribute_with_program() {
+        // target:Pcmp: prereq → P attr with program "cmp"
+        let stmts = parse_str("target:Pcmp: prereq\n").unwrap();
+        match &stmts[0] {
+            Stmt::Rule(r) => {
+                assert!(r.attributes.has_comparison());
+                assert_eq!(r.prog, Some("cmp".into()));
+            }
+            _ => panic!("expected Rule"),
+        }
+    }
+
+    #[test]
+    fn p_attribute_no_program() {
+        // target:P: prereq → P attr, no program name
+        let stmts = parse_str("target:P: prereq\n").unwrap();
+        match &stmts[0] {
+            Stmt::Rule(r) => {
+                assert!(r.attributes.has_comparison());
+                assert_eq!(r.prog, None);
+            }
+            _ => panic!("expected Rule"),
+        }
+    }
+
+    #[test]
+    fn p_attribute_with_trailing_attrs() {
+        // target:PcmpQ: prereq → P attr, program "cmp", Q attr
+        let stmts = parse_str("target:PcmpQ: prereq\n").unwrap();
+        match &stmts[0] {
+            Stmt::Rule(r) => {
+                assert!(r.attributes.has_comparison());
+                assert!(r.attributes.is_quiet());
+                assert_eq!(r.prog, Some("cmp".into()));
+            }
+            _ => panic!("expected Rule"),
+        }
+    }
+
+    #[test]
+    fn p_attribute_with_leading_attrs() {
+        // target:VPcmp: prereq → V attr, P attr, program "cmp"
+        let stmts = parse_str("target:VPcmp: prereq\n").unwrap();
+        match &stmts[0] {
+            Stmt::Rule(r) => {
+                assert!(r.attributes.is_virtual());
+                assert!(r.attributes.has_comparison());
+                assert_eq!(r.prog, Some("cmp".into()));
+            }
+            _ => panic!("expected Rule"),
+        }
+    }
+
+    #[test]
+    fn p_attribute_pv_means_p_and_v_attrs_no_prog() {
+        // target:PV: prereq → P attr + V attr, NO program (V is attr char)
+        let stmts = parse_str("target:PV: prereq\n").unwrap();
+        match &stmts[0] {
+            Stmt::Rule(r) => {
+                assert!(r.attributes.has_comparison());
+                assert!(r.attributes.is_virtual());
+                assert_eq!(r.prog, None);
             }
             _ => panic!("expected Rule"),
         }

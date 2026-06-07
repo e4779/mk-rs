@@ -88,6 +88,8 @@ pub struct Arc {
     pub stem: String,
     /// Whether this arc came from a metarule.
     pub is_meta: bool,
+    /// Custom comparison program (P: attribute).
+    pub prog: Option<String>,
 }
 
 /// The full dependency graph.
@@ -294,6 +296,7 @@ pub fn build_graph_with_nrep(
                     to: idx,
                     stem: String::new(),
                     is_meta: false,
+                    prog: rule.prog.clone(),
                 });
             }
         } else if let Some(ar) = parse_archive_ref(name) {
@@ -313,6 +316,7 @@ pub fn build_graph_with_nrep(
                 to: idx,
                 stem: String::new(),
                 is_meta: false,
+                prog: None,
             });
         } else if depth < nrep {
             // No concrete rule, depth allows metarule expansion
@@ -351,6 +355,7 @@ pub fn build_graph_with_nrep(
                                 to: idx,
                                 stem: stem.clone(),
                                 is_meta: true,
+                                prog: metarule.prog.clone(),
                             });
                         }
                         matched = true;
@@ -406,6 +411,7 @@ pub fn build_graph_with_nrep(
                                     to: idx,
                                     stem: full_match.clone(),
                                     is_meta: true,
+                                    prog: regex_rule.prog.clone(),
                                 });
                             }
                             break;
@@ -643,7 +649,23 @@ fn check_stale(
             // Check if any prereq is newer than our (possibly pretend) mtime
             prereq_stale
                 || node.arcs_in.iter().any(|&arc_idx| {
-                    let prereq_idx = graph.arcs[arc_idx.0].from;
+                    let arc = &graph.arcs[arc_idx.0];
+                    let prereq_idx = arc.from;
+
+                    // P attribute: custom comparison program overrides mtime
+                    if let Some(ref prog) = arc.prog {
+                        let target = &graph.nodes[idx.0].name;
+                        let prereq = &graph.nodes[prereq_idx.0].name;
+                        let status = std::process::Command::new("sh")
+                            .arg("-c")
+                            .arg(format!("{} '{}' '{}'", prog, target, prereq))
+                            .status();
+                        return match status {
+                            Ok(s) if s.success() => false, // up to date per custom check
+                            _ => true, // stale (program failed or returned non-zero)
+                        };
+                    }
+
                     let prereq_eff = effective_mtime(graph, prereq_idx, force_intermediates);
                     match prereq_eff {
                         Some(pmtime) => pmtime > mtime,
@@ -1102,6 +1124,7 @@ mod tests {
                     to: NodeIndex(0),
                     stem: "foo".into(),
                     is_meta: true,
+                    prog: None,
                 },
                 // concrete arc: foo.s -> foo.o (from concrete rule)
                 Arc {
@@ -1109,6 +1132,7 @@ mod tests {
                     to: NodeIndex(0),
                     stem: String::new(),
                     is_meta: false,
+                    prog: None,
                 },
             ],
             targets: vec![NodeIndex(0)],
@@ -1254,6 +1278,110 @@ mod tests {
         let bar_arch = g.nodes.iter().find(|n| n.name == "lib.a(bar.o)").unwrap();
         assert!(foo_arch.flags.0 & NodeFlags::NO_EXEC != 0);
         assert!(bar_arch.flags.0 & NodeFlags::NO_EXEC != 0);
+    }
+
+    // ── P attribute (custom comparison program) ───────────────────────
+
+    #[test]
+    fn p_attribute_prog_stored_in_arc() {
+        // Concrete rule with P attribute: prog should be propagated to arc
+        let input = "target:Pcmp: prereq\n";
+        let g = graph_from_str(input, &["target"]).unwrap();
+        let target = g.nodes.iter().find(|n| n.name == "target").unwrap();
+        assert_eq!(target.arcs_in.len(), 1);
+        let arc = &g.arcs[target.arcs_in[0].0];
+        assert_eq!(arc.prog, Some("cmp".into()));
+    }
+
+    #[test]
+    fn p_attribute_no_prog_stored_in_arc() {
+        // P attribute without program name: arc.prog should be None
+        let input = "target:P: prereq\n";
+        let g = graph_from_str(input, &["target"]).unwrap();
+        let target = g.nodes.iter().find(|n| n.name == "target").unwrap();
+        assert_eq!(target.arcs_in.len(), 1);
+        let arc = &g.arcs[target.arcs_in[0].0];
+        assert_eq!(arc.prog, None);
+    }
+
+    #[test]
+    fn p_attribute_no_attr_no_prog_in_arc() {
+        // Rule without P attribute: arc.prog should be None
+        let input = "target: prereq\n";
+        let g = graph_from_str(input, &["target"]).unwrap();
+        let target = g.nodes.iter().find(|n| n.name == "target").unwrap();
+        assert_eq!(target.arcs_in.len(), 1);
+        let arc = &g.arcs[target.arcs_in[0].0];
+        assert_eq!(arc.prog, None);
+    }
+
+    #[test]
+    fn p_attribute_metarule_prog_stored_in_arc() {
+        // Metarule with P attribute: prog should be propagated
+        let input = "%.o:Pcmp: %.c\nprog: hello.o\n";
+        let g = graph_from_str(input, &["prog"]).unwrap();
+        let hello_o = g.nodes.iter().find(|n| n.name == "hello.o").unwrap();
+        assert_eq!(hello_o.arcs_in.len(), 1);
+        let arc = &g.arcs[hello_o.arcs_in[0].0];
+        assert!(arc.is_meta);
+        assert_eq!(arc.prog, Some("cmp".into()));
+    }
+
+    /// Test that a P attribute with a program that returns 0 marks the
+    /// target as up-to-date (not stale) even if the prereq is newer.
+    #[test]
+    fn p_attribute_up_to_date_via_program() {
+        let dir = std::env::temp_dir().join("mk_test_p_uptodate");
+        let _ = std::fs::create_dir_all(&dir);
+        let target_path = dir.join("target.txt");
+        let prereq_path = dir.join("source.txt");
+
+        // source is newer than target (normally would be stale)
+        std::fs::write(&target_path, "old").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        std::fs::write(&prereq_path, "new").unwrap();
+
+        // P attribute with "true" program (always returns 0 → up to date)
+        let input = format!(
+            "{}:Ptrue: {}\n",
+            target_path.display(),
+            prereq_path.display(),
+        );
+        let g = graph_from_str(&input, &[&target_path.to_string_lossy()]).unwrap();
+        let stale = stale_nodes(&g, false);
+        assert!(stale.is_empty(), "target should be up-to-date via P program");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Test that a P attribute with a program that returns non-zero
+    /// marks the target as stale.
+    #[test]
+    fn p_attribute_stale_via_program() {
+        let dir = std::env::temp_dir().join("mk_test_p_stale");
+        let _ = std::fs::create_dir_all(&dir);
+        let target_path = dir.join("target.txt");
+        let prereq_path = dir.join("source.txt");
+
+        // target is newer than source (normally up-to-date)
+        std::fs::write(&prereq_path, "old").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        std::fs::write(&target_path, "newer").unwrap();
+
+        // P attribute with "false" program (always returns 1 → stale)
+        let input = format!(
+            "{}:Pfalse: {}\n",
+            target_path.display(),
+            prereq_path.display(),
+        );
+        let g = graph_from_str(&input, &[&target_path.to_string_lossy()]).unwrap();
+        let stale = stale_nodes(&g, false);
+        assert!(
+            stale.iter().any(|idx| g.nodes[idx.0].name == target_path.to_string_lossy()),
+            "target should be stale via P program returning non-zero"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
