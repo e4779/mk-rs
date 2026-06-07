@@ -16,3 +16,7 @@ duckscript = ["mk-rs-shell/duckscript"]
 mk-rs-core = { path = "../mk-core" }
 mk-rs-shell = { path = "../mk-shell" }
 clap = { version = "4", features = ["derive"] }
+
+[[bin]]
+name = "mk"
+path = "src/main.rs"

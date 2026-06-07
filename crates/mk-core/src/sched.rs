@@ -1055,4 +1055,24 @@ mod tests {
         .unwrap();
         assert_eq!(outcome.built, vec!["target"]);
     }
+
+    #[test]
+    fn virtual_target_builds_all_prereqs() {
+        // all:V: fetch-all analyze — fetch-all depends on x, analyze depends on y
+        // BOTH x and y should be built
+        // Regression: short-circuit any() bug in stale_nodes()
+        let mkfile = "all:V: fetch-all analyze\nfetch-all:V: x\nanalyze:V: y\nx:\n\techo x\ny:\n\techo y\n";
+        let (mut graph, rules) = build_from_mkfile(mkfile, "all");
+        let shell = TestShell;
+        let outcome = execute(
+            &mut graph,
+            &rules,
+            &shell,
+            &PathBuf::from("."),
+            &HashMap::new(),
+            &SchedOptions::default(),
+        ).unwrap();
+        assert!(outcome.built.contains(&"x".to_string()), "x should be built");
+        assert!(outcome.built.contains(&"y".to_string()), "y should be built");
+    }
 }
