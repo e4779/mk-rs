@@ -87,9 +87,9 @@
 | F-031 | `$newprereq` variable | `var`, `recipe` | 2 | ✓ |
 | F-032 | `$newmember` variable | `var`, `recipe` | 3 | — |
 | F-038 | `$pid` variable | `var`, `recipe` | 1b | ✓ |
-| F-053 | `$MKSHELL` variable | `shell`, `cli` | 2 | — |
-| F-054 | `$MKFLAGS` variable | `var` | 2 | — |
-| F-055 | `$MKARGS` variable | `var` | 2 | — |
+| F-053 | `$MKSHELL` variable | `shell`, `cli` | 2 | ◐ (sh only) |
+| F-054 | `$MKFLAGS` variable | `var` | 2 | ✓ |
+| F-055 | `$MKARGS` variable | `var` | 2 | ✓ |
 
 ## Attributes
 
@@ -101,7 +101,7 @@
 | F-024 | Error handling: D attribute | `attr`, `sched` | 2 | ◐ (attr done) |
 | F-025 | Q attribute (quiet) | `attr`, `recipe` | 1a | ◐ (attr done) |
 | F-026 | U attribute (unconditionally updated) | `attr`, `graph` | 1b | ◐ (attr done) |
-| F-027 | n attribute (non-virtual-only metarule) | `attr`, `graph` | 2 | ◐ (attr done) |
+| F-027 | n attribute (non-virtual-only metarule) | `attr`, `graph` | 2 | ✓ |
 | F-028 | P attribute (custom comparison) | `attr`, `graph` | 3 | ◐ (attr done) |
 | F-068 | Virtual target timestamp initialization | `attr`, `graph` | 1a | ✓ |
 
@@ -129,9 +129,11 @@
 | ID | Feature | Module | Phase | Status |
 |----|---------|--------|-------|--------|
 | F-043 | Recipe stdout as mkfile (dynamic generation) | `recipe`, `parse` | 3 | — |
-| F-058 | `<| command` include | `include` | 2 | — |
+| F-058 | `<| command` include | `include` | 2 | ✓ |
 | F-057 | `$OBJ` / `$O` (Plan 9 arch-dependent objects) | — | P3 | — |
 | F-070 | `membername` utility | — | P3 | — |
+
+*No F-043 (dynamic stdout-as-mkfile) — moved to Phase 3*
 
 ## Summary by phase
 
@@ -139,7 +141,7 @@
 |-------|:---:|:---:|---|
 | **1a** | ████████ 22/22 ✅ | 22 | Parser, DAG, serial exec, core variables, attrs, scheduling |
 | **1b** | ████████ 12/12 ✅ | 12 | Includes, recipe-time vars, missing intermediates, CLI flags |
-| **2** | ██████░░ 14/22 | 22 | %/&/R metarules, transitive closure, pruning, NPROC parallel |
+| **2** | ████████ 22/22 ✅ | 22 | %/&/R metarules, NPROC parallel, namelists, pruning, includes |
 | **3** | ░░░░░░░░ 0/10 | 10 | Aggregates, `<| cmd`, P attribute, dynamic mkfile, -d debug |
 | **P3** | ░░░░░░░░ 0/4 | 4 | Plan 9 specifics ($O, membername) |
 
