@@ -5,7 +5,9 @@
 
 use crate::attr::{parse_attributes, Attributes, ParseAttrError};
 use crate::error::ParseError;
+use crate::include::IncludeContext;
 use crate::lex::Token;
+use std::path::{Path, PathBuf};
 
 // ── AST types ──────────────────────────────────────────────────────────────
 
@@ -39,20 +41,66 @@ pub struct Assign {
 
 /// Parse tokens into statements.
 ///
-/// In Phase 1a: handles rules + assignments only. No includes.
+/// Thin wrapper that delegates to [`parse_with_includes`] with a fresh
+/// include context and the current working directory as the base.
 pub fn parse(tokens: &[Token]) -> Result<Vec<Stmt>, ParseError> {
+    parse_with_includes(
+        tokens,
+        &mut IncludeContext::new(),
+        &std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+    )
+}
+
+/// Parse tokens with include support.
+///
+/// Handles `< file` include directives by reading and parsing the
+/// referenced mkfile. The `base_dir` is used to resolve relative paths.
+fn parse_with_includes(
+    tokens: &[Token],
+    ctx: &mut IncludeContext,
+    base_dir: &Path,
+) -> Result<Vec<Stmt>, ParseError> {
     let mut stmts = Vec::new();
     let mut pos: usize = 0;
     let mut line: usize = 1;
 
-    while pos < tokens.len() {
+    while pos < tokens.len() && tokens[pos] != Token::Eof {
         match &tokens[pos] {
+            Token::Include => {
+                // < file — include directive
+                pos += 1;
+                let mut path_parts = Vec::new();
+                while pos < tokens.len() && matches!(&tokens[pos], Token::Word(_)) {
+                    if let Token::Word(ref w) = tokens[pos] {
+                        path_parts.push(w.clone());
+                    }
+                    pos += 1;
+                }
+                let path = path_parts.join(" ");
+                // Read and parse the included file
+                match ctx.include_file(&path, base_dir) {
+                    Ok(included_stmts) => {
+                        stmts.extend(included_stmts);
+                    }
+                    Err(e) => {
+                        return Err(ParseError::UnexpectedToken {
+                            expected: "valid include path".into(),
+                            got: e.to_string(),
+                            line,
+                        });
+                    }
+                }
+                // Consume the trailing newline
+                if pos < tokens.len() && tokens[pos] == Token::Newline {
+                    pos += 1;
+                    line += 1;
+                }
+            }
             Token::Newline => {
                 line += 1;
                 pos += 1;
             }
-            Token::Eof => break,
-            Token::Indent | Token::Include | Token::Pipe => {
+            Token::Indent | Token::Pipe => {
                 // Skip unrecognized / not-yet-supported top-level tokens
                 pos = skip_logical_line(tokens, pos, &mut line);
             }
