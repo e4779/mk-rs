@@ -44,11 +44,11 @@
 
 | ID | Feature | Module | Phase | Status |
 |----|---------|--------|-------|--------|
-| F-004 | `%` metarules | `parse`, `graph` | 2 | — |
-| F-005 | Transitive closure | `graph` | 2 | — |
-| F-019 | Regular rule overrides metarule | `graph` | 2 | — |
-| F-029 | `R:` regex metarules | `parse`, `graph` | 2 | — |
-| F-044 | `&` metarule (limited match) | `parse`, `graph` | 2 | — |
+| F-004 | `%` metarules | `parse`, `graph` | 2 | ✓ |
+| F-005 | Transitive closure | `graph` | 2 | ✓ |
+| F-019 | Regular rule overrides metarule | `graph` | 2 | ✓ |
+| F-029 | `R:` regex metarules | `parse`, `graph` | 2 | ✓ |
+| F-044 | `&` metarule (limited match) | `parse`, `graph` | 2 | ✓ |
 | F-056 | `$NREP` variable | `var`, `graph` | 2 | — |
 
 ## Graph & DAG
@@ -70,9 +70,9 @@
 
 | ID | Feature | Module | Phase | Status |
 |----|---------|--------|-------|--------|
-| F-007 | Parallel execution (`$NPROC`) | `sched` | 2 | — |
-| F-037 | `$nproc` variable | `var`, `sched` | 2 | — |
-| F-052 | `-s` flag (sequential) | `cli`, `sched` | 2 | — |
+| F-007 | Parallel execution (`$NPROC`) | `sched` | 2 | ✓ |
+| F-037 | `$nproc` variable | `var`, `sched` | 2 | ✓ |
+| F-052 | `-s` flag (sequential) | `cli`, `sched` | 2 | ✓ |
 
 ## Recipe Execution
 
@@ -82,9 +82,9 @@
 | F-016 | First-char elision in recipes | `recipe` | 1a | ✓ |
 | F-033 | `$target` variable | `var`, `recipe` | 1b | ✓ |
 | F-034 | `$prereq` variable | `var`, `recipe` | 1b | ✓ |
-| F-035 | `$stem` variable | `var`, `recipe` | 2 | — |
-| F-036 | `$alltarget` variable | `var`, `recipe` | 2 | — |
-| F-031 | `$newprereq` variable | `var`, `recipe` | 2 | — |
+| F-035 | `$stem` variable | `var`, `recipe` | 2 | ✓ |
+| F-036 | `$alltarget` variable | `var`, `recipe` | 2 | ✓ |
+| F-031 | `$newprereq` variable | `var`, `recipe` | 2 | ✓ |
 | F-032 | `$newmember` variable | `var`, `recipe` | 3 | — |
 | F-038 | `$pid` variable | `var`, `recipe` | 1b | ✓ |
 | F-053 | `$MKSHELL` variable | `shell`, `cli` | 2 | — |
@@ -139,7 +139,7 @@
 |-------|:---:|:---:|---|
 | **1a** | ████████ 22/22 ✅ | 22 | Parser, DAG, serial exec, core variables, attrs, scheduling |
 | **1b** | ████████ 12/12 ✅ | 12 | Includes, recipe-time vars, missing intermediates, CLI flags |
-| **2** | ░░░░░░░░ 0/22 | 22 | %/&/R metarules, transitive closure, pruning, NPROC parallel |
+| **2** | ██████░░ 14/22 | 22 | %/&/R metarules, transitive closure, pruning, NPROC parallel |
 | **3** | ░░░░░░░░ 0/10 | 10 | Aggregates, `<| cmd`, P attribute, dynamic mkfile, -d debug |
 | **P3** | ░░░░░░░░ 0/4 | 4 | Plan 9 specifics ($O, membername) |
 
