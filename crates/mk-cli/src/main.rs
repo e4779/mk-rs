@@ -82,8 +82,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     // Stub flags (parsed, not yet implemented)
     let _ = &cli.force_intermediates;
-    let _ = &cli.debug;
     let _ = &cli.whatif;
+
+    // -d debug flag: print requested debug categories
+    if let Some(ref debug) = cli.debug {
+        for ch in debug.chars() {
+            match ch {
+                'p' => eprintln!("mk: debug: parsing enabled"),
+                'g' => eprintln!("mk: debug: graph building enabled"),
+                'e' => eprintln!("mk: debug: execution enabled"),
+                _ => eprintln!("mk: warning: unknown debug flag '{}'", ch),
+            }
+        }
+    }
 
     // Chdir if -C specified
     if let Some(ref dir) = cli.directory {

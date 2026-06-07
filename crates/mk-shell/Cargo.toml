@@ -4,5 +4,10 @@ version = "0.1.0"
 edition = "2021"
 description = "Shell abstraction for mk: sh, rc implementations"
 
+[features]
+duckscript = ["dep:duckscript", "dep:duckscriptsdk"]
+
 [dependencies]
 mk-core = { path = "../mk-core" }
+duckscript = { version = "0.10", optional = true }
+duckscriptsdk = { version = "0.11", optional = true }

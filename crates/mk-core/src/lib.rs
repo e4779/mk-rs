@@ -26,3 +26,4 @@ pub mod shell;
 pub mod recipe;
 pub mod sched;
 pub mod include;
+pub mod archive;

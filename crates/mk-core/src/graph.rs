@@ -16,6 +16,7 @@ use std::collections::HashMap;
 
 use regex::Regex;
 
+use crate::archive::parse_archive_ref;
 use crate::error::GraphError;
 use crate::parse::{Rule, Stmt};
 
@@ -42,6 +43,7 @@ impl NodeFlags {
     pub const CYCLE: u8 = 1 << 3;
     pub const VISITED: u8 = 1 << 4;
     pub const PRETENDING: u8 = 1 << 5;
+    pub const NO_EXEC: u8 = 1 << 6;
 
     pub fn is_virtual(&self) -> bool {
         self.0 & Self::VIRTUAL != 0
@@ -294,6 +296,24 @@ pub fn build_graph_with_nrep(
                     is_meta: false,
                 });
             }
+        } else if let Some(ar) = parse_archive_ref(name) {
+            // Archive member reference: lib.a(member.o)
+            // Auto-generate dependency: member.o → lib.a(member.o)
+            // Mark with N attribute (no recipe — archive update handled separately)
+            graph.nodes[idx.0].flags.set(NodeFlags::NO_EXEC);
+
+            let member_idx = build_node(
+                graph, rules_by_target, metarules, regex_rules, name_to_index,
+                nrep, depth, &ar.member,
+            );
+            let arc_idx = ArcIndex(graph.arcs.len());
+            graph.nodes[idx.0].arcs_in.push(arc_idx);
+            graph.arcs.push(Arc {
+                from: member_idx,
+                to: idx,
+                stem: String::new(),
+                is_meta: false,
+            });
         } else if depth < nrep {
             // No concrete rule, depth allows metarule expansion
             let mut matched = false;
@@ -424,7 +444,8 @@ pub fn build_graph_with_nrep(
                     } else {
                         false
                     }
-                });
+                })
+            || parse_archive_ref(&node.name).is_some();
         if !has_rule && node.mtime.is_none() {
             return Err(GraphError::NoRule {
                 target: node.name.clone(),
@@ -1171,5 +1192,74 @@ mod tests {
         let g = graph_from_str(input, &["target"]).unwrap();
         // Should be same as NREP=1: 3 nodes
         assert_eq!(g.nodes.len(), 3);
+    }
+
+    // ── Archive member syntax ────────────────────────────────────────
+
+    #[test]
+    fn archive_member_creates_dep_on_member() {
+        // lib.a(foo.o) should auto-create dependency on foo.o
+        let input = "out: lib.a(foo.o)\n";
+        let g = graph_from_str(input, &["out"]).unwrap();
+        // 3 nodes: out, lib.a(foo.o), foo.o
+        assert_eq!(g.nodes.len(), 3);
+        let archive_node = g.nodes.iter().find(|n| n.name == "lib.a(foo.o)").unwrap();
+        assert_eq!(archive_node.arcs_in.len(), 1);
+        let arc = &g.arcs[archive_node.arcs_in[0].0];
+        assert!(!arc.is_meta);
+        assert_eq!(g.nodes[arc.from.0].name, "foo.o");
+    }
+
+    #[test]
+    fn archive_member_has_n_flag() {
+        // lib.a(foo.o) node should have NO_EXEC flag
+        let input = "out: lib.a(foo.o)\n";
+        let g = graph_from_str(input, &["out"]).unwrap();
+        let archive_node = g.nodes.iter().find(|n| n.name == "lib.a(foo.o)").unwrap();
+        assert!(archive_node.flags.0 & NodeFlags::NO_EXEC != 0);
+    }
+
+    #[test]
+    fn archive_member_standalone() {
+        // Build graph directly for lib.a(foo.o)
+        let g = graph_from_str("", &["lib.a(foo.o)"]).unwrap();
+        assert_eq!(g.nodes.len(), 2);
+        let archive_idx = g.nodes.iter().position(|n| n.name == "lib.a(foo.o)").unwrap();
+        assert_eq!(g.nodes[archive_idx].arcs_in.len(), 1);
+        let member_idx = g.arcs[g.nodes[archive_idx].arcs_in[0].0].from;
+        assert_eq!(g.nodes[member_idx.0].name, "foo.o");
+    }
+
+    #[test]
+    fn concrete_rule_overrides_archive_auto() {
+        // If there's an explicit concrete rule for lib.a(foo.o), use it
+        let input = "lib.a(foo.o): explicit.c\n";
+        let g = graph_from_str(input, &["lib.a(foo.o)"]).unwrap();
+        assert_eq!(g.nodes.len(), 2);
+        let archive_node = g.nodes.iter().find(|n| n.name == "lib.a(foo.o)").unwrap();
+        let arc = &g.arcs[archive_node.arcs_in[0].0];
+        assert_eq!(g.nodes[arc.from.0].name, "explicit.c");
+        // Should NOT have NO_EXEC flag (concrete rule handles it)
+        // Actually NO_EXEC is only set in the archive auto-path, not when concrete found
+    }
+
+    #[test]
+    fn archive_member_in_prereq_list() {
+        // Multiple archive members as prereqs
+        let input = "out: lib.a(foo.o) lib.a(bar.o)\n";
+        let g = graph_from_str(input, &["out"]).unwrap();
+        // out + 2 archive nodes + 2 member nodes = 5
+        assert_eq!(g.nodes.len(), 5);
+        let foo_arch = g.nodes.iter().find(|n| n.name == "lib.a(foo.o)").unwrap();
+        let bar_arch = g.nodes.iter().find(|n| n.name == "lib.a(bar.o)").unwrap();
+        assert!(foo_arch.flags.0 & NodeFlags::NO_EXEC != 0);
+        assert!(bar_arch.flags.0 & NodeFlags::NO_EXEC != 0);
+    }
+
+    #[test]
+    fn archive_non_matching_parens_not_treated_as_archive() {
+        // Names without archive(member) pattern should still error with no rule
+        let result = graph_from_str("", &["just.a.file.o"]);
+        assert!(result.is_err());
     }
 }

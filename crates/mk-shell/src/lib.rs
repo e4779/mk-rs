@@ -87,6 +87,61 @@ impl Shell for ShShell {
     }
 }
 
+// ── duckscript shell ────────────────────────────────────────────────────────
+
+/// duckscript embedded shell implementation.
+#[cfg(feature = "duckscript")]
+#[derive(Debug, Clone)]
+pub struct DuckShell;
+
+#[cfg(feature = "duckscript")]
+impl Shell for DuckShell {
+    fn name(&self) -> &str {
+        "duckscript"
+    }
+
+    fn execute(
+        &self,
+        recipe: &str,
+        env: &HashMap<String, String>,
+        dir: &Path,
+    ) -> Result<ShellResult, ShellError> {
+        let mut context = duckscript::types::runtime::Context::new();
+        // Load all env vars into duckscript context
+        for (k, v) in env {
+            context.variables.insert(k.clone(), v.clone());
+        }
+        // Load SDK commands (exec, cp, mv, mkdir, etc.)
+        duckscriptsdk::load(&mut context.commands)
+            .map_err(|e| ShellError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+
+        // Set working directory
+        std::env::set_current_dir(dir)
+            .map_err(ShellError::Io)?;
+
+        // Run script
+        duckscript::runner::run_script(recipe, context, None)
+            .map_err(|e| ShellError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+
+        Ok(ShellResult {
+            exit_code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+        })
+    }
+
+    fn find_unescaped(&self, input: &str, ch: char) -> Vec<usize> {
+        // duckscript doesn't have shell quoting — simple scan
+        input.match_indices(ch).map(|(i, _)| i).collect()
+    }
+
+    fn quote(&self, token: &str) -> String {
+        token.to_string() // duckscript doesn't need shell quoting
+    }
+}
+
+// ── tests ──────────────────────────────────────────────────────────────────
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,5 +216,20 @@ mod tests {
     fn quote_with_single_quote() {
         let shell = ShShell;
         assert_eq!(shell.quote("it's"), "'it'\\''s'");
+    }
+
+    #[cfg(feature = "duckscript")]
+    #[test]
+    fn duck_shell_name() {
+        assert_eq!(DuckShell.name(), "duckscript");
+    }
+
+    #[cfg(feature = "duckscript")]
+    #[test]
+    fn duck_shell_execute_simple() {
+        let shell = DuckShell;
+        let env = HashMap::new();
+        let result = shell.execute("echo hello", &env, Path::new(".")).unwrap();
+        assert_eq!(result.exit_code, 0);
     }
 }
