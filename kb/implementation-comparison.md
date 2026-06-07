@@ -104,3 +104,13 @@ The agent struggled because `mk: build aborted due to errors` didn't show **whic
 ## Verdict
 
 mk-rs is a **synthesis**: syntax and semantics from plan9port, shell choice validated by 9base, embedding pattern from cargo-make, test coverage from no one (we invented it). The result is smaller, safer, and better documented than any prior mk port.
+
+### Improvements over plan9port mk
+
+| Area | plan9port | mk-rs |
+|------|-----------|-------|
+| Error reporting | Shows recipe text as "target name" (confusing) | Shows actual target name + exit code + stderr |
+| Virtual+no-prereqs | Always executes | Always executes (fixed bug from earlier releases) |
+| Shell selection | rc by default, sh via MKSHELL | sh by default, duckscript optional |
+| Test coverage | 0 tests | 267 tests |
+| Documentation | man page only | man page + README + comparison doc + spec |
