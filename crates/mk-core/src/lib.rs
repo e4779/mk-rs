@@ -22,3 +22,5 @@ pub mod error;
 pub mod parse;
 pub mod var;
 pub mod graph;
+pub mod shell;
+pub mod recipe;
