@@ -1,7 +1,9 @@
-# mk-rust
+# mk-rs
 
-> A faithful Rust port of Plan 9's `mk` build tool.
-> Pattern-based metarules, parallel execution, and the Plan 9 way of maintaining files.
+> A faithful Rust port of `mk` — the dependency-driven build tool by Andrew Hume.
+> *"Mk: a successor to make" (1987)*
+
+Pattern-based metarules. Transitive closure. Parallel execution. No built-in magic.
 
 ## What is mk?
 
@@ -16,12 +18,18 @@ mk-rust ports these semantics to Rust with zero unsafe code, a library-first arc
 ### Install
 
 ```bash
-# Clone and build
+# Install from crates.io
+cargo install mk-rs
+
+# Optional: with duckscript support
+cargo install mk-rs --features duckscript
+```
+
+Or build from source:
+```bash
 git clone https://github.com/your-org/mk-rust.git
 cd mk-rust
 cargo build --release
-
-# Optional: install to ~/.cargo/bin
 cargo install --path crates/mk-cli
 ```
 
@@ -140,7 +148,6 @@ fn main() -> anyhow::Result<()> {
 
 ```bash
 # Requirements: Rust 1.80+
-
 git clone https://github.com/your-org/mk-rust.git
 cd mk-rust
 
