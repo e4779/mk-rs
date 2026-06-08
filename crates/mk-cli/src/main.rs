@@ -23,7 +23,11 @@ use mk_rs_shell::DuckShell;
 /// Reads dependency rules from a mkfile and executes recipes
 /// to bring targets up to date.
 #[derive(Parser)]
-#[command(name = "mk", version, about)]
+#[command(
+    name = "mk",
+    version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("GIT_HASH"), ")"),
+    about
+)]
 struct Cli {
     /// Mkfile to read (default: mkfile)
     #[arg(short = 'f', default_value = "mkfile")]
