@@ -110,10 +110,20 @@ impl Shell for CustomShell {
         env: &HashMap<String, String>,
         dir: &Path,
     ) -> Result<ShellResult, ShellError> {
-        let mut cmd = Command::new(&self.cmd);
-        cmd.arg("-c")
-           .arg(recipe)
-           .current_dir(dir);
+        let parts: Vec<&str> = self.cmd.split_whitespace().collect();
+        if parts.is_empty() {
+            return Err(ShellError::ShellNotFound { name: "empty MKSHELL".into() });
+        }
+        let mut cmd = Command::new(parts[0]);
+        // If no flags specified, default to -c (POSIX shell convention)
+        if parts.len() > 1 {
+            for arg in &parts[1..] {
+                cmd.arg(arg);
+            }
+        } else {
+            cmd.arg("-c");
+        }
+        cmd.arg(recipe).current_dir(dir);
         cmd.env_clear();
         for (k, v) in env {
             cmd.env(k, v);
@@ -144,9 +154,27 @@ mod custom_shell_tests {
 
     #[test]
     fn custom_shell_bash() {
-        let shell = CustomShell::new("/bin/bash");
-        assert_eq!(shell.name(), "/bin/bash");
+        let shell = CustomShell::new("/bin/bash -c");
+        assert_eq!(shell.name(), "/bin/bash -c");
         let result = shell.execute("echo hello", &HashMap::new(), Path::new(".")).unwrap();
+        assert_eq!(result.exit_code, 0);
+    }
+
+    #[test]
+    #[ignore] // node path depends on environment (nvm)
+    fn custom_shell_node() {
+        // MKSHELL=node -e → runs node -e "recipe"
+        let shell = CustomShell::new("node -e");
+        assert_eq!(shell.name(), "node -e");
+        let result = shell.execute("console.log('hello')", &HashMap::new(), Path::new(".")).unwrap();
+        assert_eq!(result.exit_code, 0);
+    }
+
+    #[test]
+    fn custom_shell_no_flags_defaults_to_c() {
+        // MKSHELL=/bin/sh → defaults to /bin/sh -c "recipe"
+        let shell = CustomShell::new("/bin/bash");
+        let result = shell.execute("echo hi", &HashMap::new(), Path::new(".")).unwrap();
         assert_eq!(result.exit_code, 0);
     }
 }
