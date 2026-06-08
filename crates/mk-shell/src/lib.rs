@@ -86,6 +86,71 @@ impl Shell for ShShell {
     }
 }
 
+// ── Custom shell (MKSHELL) ─────────────────────────────────────────────────
+
+/// Custom shell that uses the command from $MKSHELL.
+/// E.g., MKSHELL=/bin/bash → runs /bin/bash -ec <recipe>
+#[derive(Debug, Clone)]
+pub struct CustomShell {
+    cmd: String,
+}
+
+impl CustomShell {
+    pub fn new(cmd: &str) -> Self {
+        Self { cmd: cmd.to_string() }
+    }
+}
+
+impl Shell for CustomShell {
+    fn name(&self) -> &str { &self.cmd }
+
+    fn execute(
+        &self,
+        recipe: &str,
+        env: &HashMap<String, String>,
+        dir: &Path,
+    ) -> Result<ShellResult, ShellError> {
+        let mut cmd = Command::new(&self.cmd);
+        cmd.arg("-ec")
+           .arg(recipe)
+           .current_dir(dir);
+        cmd.env_clear();
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
+        if !env.contains_key("PATH") {
+            cmd.env("PATH", "/usr/local/bin:/usr/bin:/bin");
+        }
+        let status = cmd.status()?;
+        Ok(ShellResult {
+            exit_code: status.code().unwrap_or(-1),
+            stdout: String::new(),
+            stderr: String::new(),
+        })
+    }
+
+    fn find_unescaped(&self, input: &str, ch: char) -> Vec<usize> {
+        ShShell.find_unescaped(input, ch) // same quoting as sh
+    }
+
+    fn quote(&self, token: &str) -> String {
+        ShShell.quote(token)
+    }
+}
+
+#[cfg(test)]
+mod custom_shell_tests {
+    use super::*;
+
+    #[test]
+    fn custom_shell_bash() {
+        let shell = CustomShell::new("/bin/bash");
+        assert_eq!(shell.name(), "/bin/bash");
+        let result = shell.execute("echo hello", &HashMap::new(), Path::new(".")).unwrap();
+        assert_eq!(result.exit_code, 0);
+    }
+}
+
 // ── duckscript shell ────────────────────────────────────────────────────────
 
 /// duckscript embedded shell implementation.

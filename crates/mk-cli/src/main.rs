@@ -14,7 +14,7 @@ use mk_rs_core::lex::{tokenize, ShellMode};
 use mk_rs_core::parse::Stmt;
 use mk_rs_core::sched::{execute, ResolvedRule, SchedOptions};
 use mk_rs_core::var::{builtin_scope, import_env, Precedence};
-use mk_rs_shell::ShShell;
+use mk_rs_shell::{CustomShell, ShShell};
 #[cfg(feature = "duckscript")]
 use mk_rs_shell::DuckShell;
 
@@ -224,8 +224,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             {
                 Box::new(DuckShell)
             }
-        } else {
+        } else if mkshell == "/bin/sh" || mkshell == "sh" {
             Box::new(ShShell)
+        } else {
+            Box::new(CustomShell::new(&mkshell))
         }
     };
 
