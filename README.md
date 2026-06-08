@@ -203,11 +203,29 @@ mkfile text → lex (tokens) → parse (AST) → graph (DAG) → sched (execute)
 | 1a | Parser, DAG, serial exec, core variables, attributes | ✅ Complete |
 | 1b | Includes, recipe-time vars, missing intermediates, CLI flags | ✅ Complete |
 | 2 | %/&/R metarules, NPROC parallel, namelists, pruning | ✅ Complete |
-| 3 | Aggregates, P attribute, debug flags, duckscript, polish | 🔄 In progress |
+| 3 | Aggregates, P attribute, debug flags, duckscript, polish, graph export | ✅ Complete |
 
 See [`TRACEABILITY.md`](TRACEABILITY.md) for the full feature matrix mapped to mk spec features.
 
 See [`PLAN.md`](PLAN.md) for the project vision, design decisions, and future plans.
+
+## Dependency graph
+
+```bash
+# Show entire graph in DOT format
+mk --graph
+
+# Show subgraph reachable from a specific target
+mk --graph-of data/processed/result.json
+
+# Render to SVG
+mk --graph | dot -Tsvg > graph.svg
+
+# Render to ASCII for terminal viewing
+mk -f mkfile --graph-of test | dot -Tascii
+```
+
+Edge labels show the mkfile line number where the rule is defined.
 
 ## License
 

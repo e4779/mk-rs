@@ -25,6 +25,8 @@ The environment variable `$NPROC` determines how many targets may be updated sim
 | `-a` | Assume all targets to be out of date. Everything is updated. |
 | `-d[egp]` | Produce debugging output (p=parsing, g=graph building, e=execution). |
 | `-e` | Explain why each target is made. |
+| `--graph` | Output dependency graph in DOT format and exit. Pipe to `dot -Tsvg > graph.svg`. |
+| `--graph-of TARGET` | Output subgraph reachable from TARGET in DOT format and exit. |
 | `-i` | Force any missing intermediate targets to be made. |
 | `-k` | Do as much work as possible in the face of errors. |
 | `-n` | Print, but do not execute, the commands needed to update the targets. |
