@@ -78,6 +78,8 @@ pub struct Lexer {
     chars: Vec<char>,
     pos: usize,
     mode: ShellMode,
+    /// True when lexing a recipe line (after Indent, before non-indented Newline).
+    in_recipe: bool,
 }
 
 impl Lexer {
@@ -87,6 +89,7 @@ impl Lexer {
             chars: input.chars().collect(),
             pos: 0,
             mode,
+            in_recipe: false,
         }
     }
 
@@ -104,11 +107,14 @@ impl Lexer {
                 if let Some(c) = self.peek_char() {
                     if c == ' ' || c == '\t' {
                         tokens.push(Token::Indent);
+                        self.in_recipe = true;
                         // consume remaining leading whitespace
                         self.skip_whitespace();
                         continue;
                     }
                 }
+                // Non-indented line → exit recipe mode
+                self.in_recipe = false;
             }
 
             // Guard: record the position before we call next_char in case we
@@ -135,8 +141,13 @@ impl Lexer {
 
                 // ---- backtick region (opaque text) ----
                 '`' => {
-                    word.push('`');
-                    self.read_backtick(&mut word, save_pos)?;
+                    if self.in_recipe {
+                        // Recipes pass through verbatim — backticks are shell syntax
+                        word.push('`');
+                    } else {
+                        word.push('`');
+                        self.read_backtick(&mut word, save_pos)?;
+                    }
                 }
 
                 // ---- comment (# outside quotes / backticks) ----
@@ -906,5 +917,46 @@ mod tests {
             tokenize("    cmd\n", ShellMode::Sh).unwrap(),
             tks(vec![Token::Indent, w("cmd"), Token::Newline])
         );
+    }
+
+    #[test]
+    fn backtick_in_recipe_passed_verbatim() {
+        // Recipes should pass backticks through verbatim — they're shell syntax.
+        // Regression: lexer was trying to match backticks in recipes.
+        let result = tokenize(
+            "target:\n\tcmd `backtick` arg\n",
+            ShellMode::Sh,
+        ).unwrap();
+        // Recipe line should be treated as raw tokens, not backtick-processed
+        let tokens = tks(vec![
+            w("target"),
+            Token::Colon,
+            Token::Newline,
+            Token::Indent,
+            w("cmd"),
+            w("`backtick`"),  // backtick text preserved as-is
+            w("arg"),
+            Token::Newline,
+        ]);
+        assert_eq!(result, tokens);
+    }
+
+    #[test]
+    fn backtick_brace_in_recipe_passed_verbatim() {
+        // es-style `{cmd}` in recipes should pass through verbatim
+        let result = tokenize(
+            "target:\n\techo `{uptime}`\n",
+            ShellMode::Sh,
+        ).unwrap();
+        let tokens = tks(vec![
+            w("target"),
+            Token::Colon,
+            Token::Newline,
+            Token::Indent,
+            w("echo"),
+            w("`{uptime}`"),  // rc-style backtick preserved verbatim
+            Token::Newline,
+        ]);
+        assert_eq!(result, tokens);
     }
 }
