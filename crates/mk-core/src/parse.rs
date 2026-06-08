@@ -720,4 +720,27 @@ mod tests {
             _ => panic!("expected Rule"),
         }
     }
+
+    #[test]
+    fn recipe_with_equals_parsed_correctly() {
+        // Regression: = inside recipe text was treated as assignment
+        let stmts = parse_str("test:V:\n\tconst x=1\n").unwrap();
+        match &stmts[0] {
+            Stmt::Rule(r) => {
+                assert_eq!(r.recipe, Some("const x=1".into()));
+            }
+            _ => panic!("expected Rule"),
+        }
+    }
+
+    #[test]
+    fn recipe_with_node_equals_parsed_correctly() {
+        let stmts = parse_str("test:V:\n\tlet x=1\n").unwrap();
+        match &stmts[0] {
+            Stmt::Rule(r) => {
+                assert_eq!(r.recipe, Some("let x=1".into()));
+            }
+            _ => panic!("expected Rule"),
+        }
+    }
 }

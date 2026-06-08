@@ -171,14 +171,14 @@ impl Lexer {
                 }
 
                 // ---- special chars (suppressed inside ${…}) ----
-                ':' if brace_depth == 0 => {
+                ':' if brace_depth == 0 && !self.in_recipe => {
                     if !word.is_empty() {
                         tokens.push(Token::Word(std::mem::take(&mut word)));
                     }
                     tokens.push(Token::Colon);
                 }
 
-                '=' if brace_depth == 0 => {
+                '=' if brace_depth == 0 && !self.in_recipe => {
                     if !word.is_empty() {
                         tokens.push(Token::Word(std::mem::take(&mut word)));
                     }
