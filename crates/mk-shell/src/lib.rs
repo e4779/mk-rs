@@ -218,6 +218,18 @@ mod tests {
         assert_eq!(shell.quote("it's"), "'it'\\''s'");
     }
 
+    #[test]
+    fn execute_stdout_inherited_not_captured() {
+        // Recipe output goes to terminal (status() inherits stdout).
+        // ShellResult.stdout/stderr should be empty.
+        let shell = ShShell;
+        let env = HashMap::new();
+        let result = shell.execute("echo visible", &env, Path::new(".")).unwrap();
+        assert_eq!(result.exit_code, 0);
+        assert!(result.stdout.is_empty());
+        assert!(result.stderr.is_empty());
+    }
+
     #[cfg(feature = "duckscript")]
     #[test]
     fn duck_shell_name() {
