@@ -111,7 +111,8 @@ impl Shell for CustomShell {
         dir: &Path,
     ) -> Result<ShellResult, ShellError> {
         let mut cmd = Command::new(&self.cmd);
-        cmd.arg("-ec")
+        cmd.arg("-e")
+           .arg("-c")
            .arg(recipe)
            .current_dir(dir);
         cmd.env_clear();
