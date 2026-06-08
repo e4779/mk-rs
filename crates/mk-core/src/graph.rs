@@ -90,6 +90,8 @@ pub struct Arc {
     pub is_meta: bool,
     /// Custom comparison program (P: attribute).
     pub prog: Option<String>,
+    /// Line number in the mkfile where this edge's rule was defined.
+    pub line: usize,
 }
 
 /// The full dependency graph.
@@ -324,6 +326,7 @@ pub fn build_graph_with_nrep(
                     stem: String::new(),
                     is_meta: false,
                     prog: rule.prog.clone(),
+                    line: rule.line,
                 });
             }
         } else if let Some(ar) = parse_archive_ref(name) {
@@ -344,6 +347,7 @@ pub fn build_graph_with_nrep(
                 stem: String::new(),
                 is_meta: false,
                 prog: None,
+                line: 0,  // auto-generated (archive member)
             });
         } else if depth < nrep {
             // No concrete rule, depth allows metarule expansion
@@ -383,6 +387,7 @@ pub fn build_graph_with_nrep(
                                 stem: stem.clone(),
                                 is_meta: true,
                                 prog: metarule.prog.clone(),
+                                line: metarule.line,
                             });
                         }
                         matched = true;
@@ -439,6 +444,7 @@ pub fn build_graph_with_nrep(
                                     stem: full_match.clone(),
                                     is_meta: true,
                                     prog: regex_rule.prog.clone(),
+                                    line: regex_rule.line,
                                 });
                             }
                             break;
@@ -710,6 +716,106 @@ fn check_stale(
     }
 
     stale
+}
+
+// ── Graph visualization ───────────────────────────────────────────────────
+
+/// Which nodes to include in DOT output.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum GraphScope {
+    /// Show all nodes and edges in the graph.
+    All,
+    /// Show only the subgraph reachable from the named target.
+    Subgraph,
+}
+
+impl Graph {
+    /// Export the dependency graph in Graphviz DOT format.
+    ///
+    /// Virtual nodes are drawn as ellipses, file targets as boxes.
+    /// Stale nodes (needing rebuild) are filled red.
+    /// Edge labels show the mkfile line number where the rule was defined.
+    pub fn to_dot(&self, scope: GraphScope, root: Option<&str>) -> String {
+        let mut out = String::from("digraph mk {\n");
+        out.push_str("  rankdir=LR;\n");
+        out.push_str("  node [fontname=\"monospace\"];\n");
+        out.push_str("  edge [fontname=\"monospace\"];\n\n");
+
+        // Determine which nodes to include
+        let included: std::collections::HashSet<NodeIndex> = match scope {
+            GraphScope::All => (0..self.nodes.len()).map(NodeIndex).collect(),
+            GraphScope::Subgraph => {
+                let root_idx = root
+                    .and_then(|n| self.nodes.iter().position(|node| node.name == n))
+                    .map(NodeIndex);
+                match root_idx {
+                    Some(idx) => self.reachable_from(idx),
+                    None => {
+                        eprintln!("mk: --graph: target '{}' not found", root.unwrap_or(""));
+                        return String::new();
+                    }
+                }
+            }
+        };
+
+        // Write nodes
+        for idx in &included {
+            let node = &self.nodes[idx.0];
+            let shape = if node.flags.is_virtual() { "ellipse" } else { "box" };
+            // Escape label for DOT
+            let label = node.name.replace('\\', "\\\\").replace('"', "\\\"");
+            out.push_str(&format!(
+                "  n{} [label=\"{}\" shape={}];\n",
+                idx.0, label, shape
+            ));
+        }
+
+        out.push('\n');
+
+        // Write edges (only between included nodes)
+        for (_i, arc) in self.arcs.iter().enumerate() {
+            if !included.contains(&arc.from) || !included.contains(&arc.to) {
+                continue;
+            }
+            let mut attrs = Vec::new();
+            if arc.line > 0 {
+                attrs.push(format!("line {}", arc.line));
+            }
+            if arc.is_meta {
+                attrs.push("meta".into());
+            }
+            if arc.prog.is_some() {
+                attrs.push(format!("P:{}", arc.prog.as_ref().unwrap()));
+            }
+            if !arc.stem.is_empty() {
+                attrs.push(format!("stem={}", arc.stem));
+            }
+            let label = if attrs.is_empty() {
+                String::new()
+            } else {
+                format!(" [label=\"{}\"]", attrs.join("\\n"))
+            };
+            out.push_str(&format!("  n{} -> n{}{};\n", arc.from.0, arc.to.0, label));
+        }
+
+        out.push_str("}\n");
+        out
+    }
+
+    /// Collect all nodes reachable from `start` via outgoing edges.
+    fn reachable_from(&self, start: NodeIndex) -> std::collections::HashSet<NodeIndex> {
+        let mut visited = std::collections::HashSet::new();
+        let mut stack = vec![start];
+        while let Some(idx) = stack.pop() {
+            if visited.insert(idx) {
+                for &arc_idx in &self.nodes[idx.0].arcs_in {
+                    let prereq = self.arcs[arc_idx.0].from;
+                    stack.push(prereq);
+                }
+            }
+        }
+        visited
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────
@@ -1160,6 +1266,7 @@ mod tests {
                     stem: "foo".into(),
                     is_meta: true,
                     prog: None,
+                    line: 1,
                 },
                 // concrete arc: foo.s -> foo.o (from concrete rule)
                 Arc {
@@ -1168,6 +1275,7 @@ mod tests {
                     stem: String::new(),
                     is_meta: false,
                     prog: None,
+                    line: 1,
                 },
             ],
             targets: vec![NodeIndex(0)],

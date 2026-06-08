@@ -77,6 +77,14 @@ struct Cli {
     #[arg(short = 'C')]
     directory: Option<PathBuf>,
 
+    /// Output dependency graph in DOT format and exit (all targets)
+    #[arg(long = "graph")]
+    graph: bool,
+
+    /// Output dependency graph for a specific target (implies --graph; DOT format)
+    #[arg(long = "graph-of")]
+    graph_of: Option<String>,
+
     /// Targets to build (default: first target in mkfile)
     targets: Vec<String>,
 }
@@ -165,19 +173,29 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Determine targets: CLI args or first target of first rule
+    // For --graph mode, show all targets
     let target_names: Vec<String> = if cli.targets.is_empty() {
-        let first_rule = stmts.iter().find_map(|s| {
-            if let Stmt::Rule(r) = s {
-                Some(r)
-            } else {
-                None
-            }
-        });
-        match first_rule {
-            Some(r) => vec![r.targets[0].clone()],
-            None => {
-                eprintln!("mk: no targets specified and no rules in mkfile");
-                std::process::exit(1);
+        if cli.graph || cli.graph_of.is_some() {
+            // Collect all concrete (non-pattern) targets for graph
+            stmts.iter()
+                .filter_map(|s| if let Stmt::Rule(r) = s { Some(r) } else { None })
+                .flat_map(|r| r.targets.iter().cloned())
+                .filter(|t| !t.contains('%') && !t.contains('&'))
+                .collect()
+        } else {
+            let first_rule = stmts.iter().find_map(|s| {
+                if let Stmt::Rule(r) = s {
+                    Some(r)
+                } else {
+                    None
+                }
+            });
+            match first_rule {
+                Some(r) => vec![r.targets[0].clone()],
+                None => {
+                    eprintln!("mk: no targets specified and no rules in mkfile");
+                    std::process::exit(1);
+                }
             }
         }
     } else {
@@ -186,6 +204,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     // Build DAG
     let mut graph = build_graph(&stmts, &target_names)?;
+
+    // --graph / --graph-of: output DOT and exit
+    if cli.graph || cli.graph_of.is_some() {
+        use mk_rs_core::graph::GraphScope;
+        let scope = if cli.graph_of.is_some() {
+            GraphScope::Subgraph
+        } else {
+            GraphScope::All
+        };
+        let dot = graph.to_dot(scope, cli.graph_of.as_deref());
+        if !dot.is_empty() {
+            println!("{}", dot);
+        }
+        return Ok(());
+    }
 
     // Resolve metarule recipes for graph nodes without explicit rules
     for node in &graph.nodes {
