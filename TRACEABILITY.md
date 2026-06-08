@@ -142,7 +142,7 @@
 | **1a** | ████████ 22/22 ✅ | 22 | Parser, DAG, serial exec, core variables, attrs, scheduling |
 | **1b** | ████████ 12/12 ✅ | 12 | Includes, recipe-time vars, missing intermediates, CLI flags |
 | **2** | ████████ 22/22 ✅ | 22 | %/&/R metarules, NPROC parallel, namelists, pruning, includes |
-| **3** | ██████░░ 8/10 | 10 | Aggregates, P attribute, -d debug, duckscript, polish |
+| **3** | ██████░░ 9/10
 | **P3** | ░░░░░░░░ 0/4 | 4 | Plan 9 specifics ($O, membername) |
 
 *Phase 3: duckscript Shell (from cargo-make research), archive aggregates, -d debug, polish.*
