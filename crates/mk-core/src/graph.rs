@@ -109,6 +109,31 @@ fn get_mtime(path: &str) -> Option<std::time::SystemTime> {
     std::fs::metadata(path).ok()?.modified().ok()
 }
 
+/// Expand glob patterns in a list of prerequisites.
+/// If a prereq contains glob characters (*, ?, [), expand it.
+/// Otherwise, keep it as-is.
+fn expand_globs(prereqs: &[String]) -> Vec<String> {
+    let mut expanded = Vec::new();
+    for p in prereqs {
+        if p.contains('*') || p.contains('?') || p.contains('[') {
+            match glob::glob(p) {
+                Ok(paths) => {
+                    for entry in paths.flatten() {
+                        expanded.push(entry.to_string_lossy().into_owned());
+                    }
+                }
+                Err(_) => {
+                    // Invalid glob pattern — keep literal
+                    expanded.push(p.clone());
+                }
+            }
+        } else {
+            expanded.push(p.clone());
+        }
+    }
+    expanded
+}
+
 // ── Metarule matching ────────────────────────────────────────────────────
 
 /// Try to match a target name against a metarule pattern.
@@ -285,7 +310,8 @@ pub fn build_graph_with_nrep(
 
             // Phase 1a: use first rule's prereqs only (concrete rules don't increment depth)
             let rule = rules[0];
-            for prereq in &rule.prereqs {
+            let expanded_prereqs = expand_globs(&rule.prereqs);
+            for prereq in &expanded_prereqs {
                 let prereq_idx = build_node(
                     graph, rules_by_target, metarules, regex_rules, name_to_index,
                     nrep, depth, prereq,
@@ -1442,6 +1468,34 @@ mod tests {
         let names: Vec<&str> = stale.iter().map(|idx| g.nodes[idx.0].name.as_str()).collect();
         assert!(names.contains(&intermediate.to_str().unwrap()), "intermediate should be stale (was deleted)");
         assert!(names.contains(&report.to_str().unwrap()), "report should be stale (depends on deleted intermediate)");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn glob_prereqs_not_expanded_yet() {
+        // F-066: glob expansion in prerequisites not yet implemented.
+        // `target: data/*.json` should match all .json files in data/.
+        // Currently `*.json` is treated as a literal filename.
+        let dir = std::env::temp_dir().join("mk_test_glob");
+        let _ = std::fs::create_dir_all(&dir);
+        std::fs::write(dir.join("a.json"), "").unwrap();
+        std::fs::write(dir.join("b.json"), "").unwrap();
+        std::fs::write(dir.join("c.txt"), "").unwrap();
+
+        let input = format!("target: {}\n", dir.join("*.json").display());
+        let g = graph_from_str(&input, &["target"]).unwrap();
+
+        // BUG: *.json is not expanded — target has one prereq named "*.json"
+        let prereqs: Vec<&str> = g.nodes.iter()
+            .filter(|n| n.name == "target")
+            .flat_map(|n| n.arcs_in.iter())
+            .map(|&ai| g.arcs[ai.0].from)
+            .map(|idx| g.nodes[idx.0].name.as_str())
+            .collect();
+        // Should match a.json and b.json, not c.txt or literal *.json
+        assert!(prereqs.contains(&dir.join("a.json").to_str().unwrap()),
+            "glob should expand to a.json");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

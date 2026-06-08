@@ -895,6 +895,7 @@ dependencies = [
 name = "mk-rs-core"
 version = "0.1.0"
 dependencies = [
+ "glob",
  "regex",
  "thiserror",
 ]
