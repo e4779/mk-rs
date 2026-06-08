@@ -163,7 +163,8 @@ pub fn run(
     env.insert("newprereq".to_string(), recipe.prereqs.join(" "));
     env.insert("pid".to_string(), std::process::id().to_string());
     env.insert("alltarget".to_string(), recipe.all_targets.join(" "));
-    env.insert("newmember".to_string(), recipe.prereqs.join(" ")); // same as prereqs for now
+    // $newmember: extract member names from archive prereqs like lib.a(foo.o) → foo.o
+    env.insert("newmember".to_string(), extract_members(&recipe.prereqs));
     if let Some(ref stem) = recipe.stem {
         env.insert("stem".to_string(), stem.clone());
     }
@@ -206,6 +207,25 @@ pub fn run(
 /// Ensure the target exists on disk (for -t flag).
 ///
 /// If the file doesn't exist, creates an empty file.
+/// Extract member names from archive prerequisites.
+/// Converts "lib.a(foo.o) lib.a(bar.o)" → "foo.o bar.o"
+fn extract_members(prereqs: &[String]) -> String {
+    prereqs
+        .iter()
+        .filter_map(|s| {
+            // Find the last '(' and matching ')'
+            let open = s.rfind('(')?;
+            let close = s[open..].find(')')?;
+            if open > 0 && close > 1 {
+                Some(s[open + 1..open + close].to_string())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// If it does exist, leaves its mtime unchanged (mtime update requires
 /// the `filetime` crate, not yet available in Phase 1a).
 fn touch_target(target: &str) -> Result<(), RecipeError> {
@@ -631,6 +651,46 @@ mod tests {
         assert_eq!(
             env.get("newprereq").map(|s| s.as_str()),
             Some("hello.c")
+        );
+    }
+
+    #[test]
+    fn run_injects_newmember_from_archive_prereq() {
+        let shell = MockShell {
+            exit_code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+            last_env: std::sync::Mutex::new(HashMap::new()),
+        };
+        let recipe = Recipe {
+            prereqs: vec!["lib.a(foo.o)".into(), "lib.a(bar.o)".into()],
+            ..make_recipe()
+        };
+        run(&recipe, &shell, &RecipeOptions::default()).unwrap();
+        let env = shell.last_env.lock().unwrap();
+        assert_eq!(
+            env.get("newmember").map(|s| s.as_str()),
+            Some("foo.o bar.o")
+        );
+    }
+
+    #[test]
+    fn newmember_is_empty_without_archive_prereqs() {
+        let shell = MockShell {
+            exit_code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+            last_env: std::sync::Mutex::new(HashMap::new()),
+        };
+        let recipe = Recipe {
+            prereqs: vec!["hello.c".into()],
+            ..make_recipe()
+        };
+        run(&recipe, &shell, &RecipeOptions::default()).unwrap();
+        let env = shell.last_env.lock().unwrap();
+        assert_eq!(
+            env.get("newmember").map(|s| s.as_str()),
+            Some("")
         );
     }
 
