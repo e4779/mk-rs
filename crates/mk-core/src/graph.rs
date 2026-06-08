@@ -640,39 +640,40 @@ fn check_stale(
     let stale = if node.flags.is_virtual() {
         // Virtual: stale if any prereq is stale, OR if no prereqs (always run)
         prereq_stale || node.arcs_in.is_empty()
+    } else if node.mtime.is_none() {
+        // File doesn't exist — always stale.
+        // (Missing intermediate optimization would skip this node if no
+        //  downstream stale nodes depend on it — but that requires a second
+        //  pass over the DAG. For now, always rebuild missing intermediates.)
+        true
     } else {
-        // File target
-        match eff_mtime {
-            None => true, // Doesn't exist and can't pretend → stale
-            Some(mtime) => {
-                // Check if any prereq is newer than our (possibly pretend) mtime
-                prereq_stale
-                    || node.arcs_in.iter().any(|&arc_idx| {
-                        let arc = &graph.arcs[arc_idx.0];
-                        let prereq_idx = arc.from;
+        // File exists — check if prereqs are newer
+        let mtime = eff_mtime.unwrap();
+        prereq_stale
+            || node.arcs_in.iter().any(|&arc_idx| {
+                let arc = &graph.arcs[arc_idx.0];
+                let prereq_idx = arc.from;
 
-                        // P attribute: custom comparison program overrides mtime
-                        if let Some(ref prog) = arc.prog {
-                            let target = &graph.nodes[idx.0].name;
-                            let prereq = &graph.nodes[prereq_idx.0].name;
-                            let status = std::process::Command::new("sh")
-                                .arg("-c")
-                                .arg(format!("{} '{}' '{}'", prog, target, prereq))
-                                .status();
-                            return match status {
-                                Ok(s) if s.success() => false, // up to date per custom check
-                                _ => true, // stale (program failed or returned non-zero)
-                            };
-                        }
+                // P attribute: custom comparison program overrides mtime
+                if let Some(ref prog) = arc.prog {
+                    let target = &graph.nodes[idx.0].name;
+                    let prereq = &graph.nodes[prereq_idx.0].name;
+                    let status = std::process::Command::new("sh")
+                        .arg("-c")
+                        .arg(format!("{} '{}' '{}'", prog, target, prereq))
+                        .status();
+                    return match status {
+                        Ok(s) if s.success() => false,
+                        _ => true,
+                    };
+                }
 
-                        let prereq_eff = effective_mtime(graph, prereq_idx, force_intermediates);
-                        match prereq_eff {
-                            Some(pmtime) => pmtime > mtime,
-                            None => true, // prereq doesn't exist → target is stale
-                        }
-                    })
-            }
-        }
+                let prereq_eff = effective_mtime(graph, prereq_idx, force_intermediates);
+                match prereq_eff {
+                    Some(pmtime) => pmtime > mtime,
+                    None => true,
+                }
+            })
     };
 
     memo[idx.0] = Some(stale);
@@ -855,11 +856,18 @@ mod tests {
 
         let g = graph_from_str(&input, &[&target.to_string_lossy()]).unwrap();
 
-        // Without -i: intermediate should be skipped (not stale)
+        // Without -i: intermediate IS stale (missing file → must be rebuilt)
         let stale = stale_nodes(&g, false);
         assert!(
-            !stale.iter().any(|idx| g.nodes[idx.0].name == intermediate.to_string_lossy()),
-            "intermediate should be skipped (not stale) when force_intermediates=false"
+            stale.iter().any(|idx| g.nodes[idx.0].name == intermediate.to_string_lossy()),
+            "intermediate should be stale (missing file)"
+        );
+
+        // With -i (force_intermediates): also stale (same — always rebuild missing)
+        let stale_i = stale_nodes(&g, true);
+        assert!(
+            stale_i.iter().any(|idx| g.nodes[idx.0].name == intermediate.to_string_lossy()),
+            "intermediate should be stale with -i (missing file)"
         );
 
         // With -i: intermediate should be forced stale
@@ -1398,5 +1406,43 @@ mod tests {
         let stale = stale_nodes(&g, false);
         let clean_idx = g.nodes.iter().position(|n| n.name == "clean").unwrap();
         assert!(stale.contains(&NodeIndex(clean_idx)), "virtual target with no prereqs must always be stale");
+    }
+
+    #[test]
+    fn missing_intermediate_cascades_to_dependents() {
+        // When an intermediate file (both target and prereq) is deleted,
+        // BOTH the intermediate AND its dependents should be stale.
+        // Regression: effective_mtime gave pretend mtime → dependents appeared up-to-date.
+        let dir = std::env::temp_dir().join("mk_test_cascade");
+        let _ = std::fs::create_dir_all(&dir);
+        let source = dir.join("source.txt");
+        let intermediate = dir.join("intermediate.txt");
+        let report = dir.join("report.txt");
+
+        // Source exists (old)
+        std::fs::write(&source, "data").unwrap();
+        // Intermediate: depends on source
+        // Report: depends on intermediate
+        // Both intermediate and report exist (from previous build)
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        std::fs::write(&intermediate, "processed").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        std::fs::write(&report, "report").unwrap();
+
+        let input = format!(
+            "{}: {}\n\tprocess\n{}: {}\n\tanalyze\n",
+            intermediate.display(), source.display(),
+            report.display(), intermediate.display(),
+        );
+        // Delete intermediate — should trigger rebuild of intermediate AND report
+        std::fs::remove_file(&intermediate).unwrap();
+
+        let g = graph_from_str(&input, &[&report.to_string_lossy()]).unwrap();
+        let stale = stale_nodes(&g, false);
+        let names: Vec<&str> = stale.iter().map(|idx| g.nodes[idx.0].name.as_str()).collect();
+        assert!(names.contains(&intermediate.to_str().unwrap()), "intermediate should be stale (was deleted)");
+        assert!(names.contains(&report.to_str().unwrap()), "report should be stale (depends on deleted intermediate)");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
