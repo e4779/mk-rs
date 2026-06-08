@@ -8,7 +8,7 @@
 
 ## 1. Project vision
 
-mk-rust is a faithful, high-quality Rust port of Plan 9's `mk` build tool — not a clone of GNU Make, not a reimagining with Lua/JS, not a general task runner. It exists because the Go ports (dcjones, ctSkennerton) are abandoned, the Knit project conflates build logic with a full scripting VM, and the original plan9port C codebase (~4,350 LOC of Plan 9 dialect C) has outlived its portability window.
+mk-rust is a faithful, high-quality Rust port of `mk` — Andrew Hume's successor to make. Not a clone of GNU Make, not a reimagining with Lua, not a general task runner.
 
 What mk-rust **is**:
 
@@ -878,7 +878,7 @@ mkfile:
 | **1a** — Core MVP | 22 | ~2 weeks | Build a C program from explicit rules | 22/22 ✅ |
 | **1b** — Variables & includes | 12 | ~1.5 weeks | Multi-file projects with `< file` includes | 12/12 ✅ |
 | **2** — Metarules & parallel | 22 | ~2.5 weeks | `%.o: %.c` patterns, NPROC parallel builds | 22/22 ✅ |
-| **3** — Aggregates & polish | 10 | ~2 weeks | Full plan9port mk compatibility | 2/10 █░ |
+| **3** — Aggregates & polish | 10 | ~2 weeks | Full plan9port mk compatibility | 8/10 █████░ |
 | **Deferred** — Plan 9 specifics | 4 | — | `$O`, `membername`, stdout-as-mkfile | 0/4 |
 
 *Phase 1a modules done: `lex` (✓), `attr` (✓), `error` (✓). Next: `parse`, `graph`.*

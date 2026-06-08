@@ -24,7 +24,7 @@
 | F-014 | First target as default | `graph`, `cli` | 1a | ✓ |
 | F-045 | Rule header evaluated at parse time | `parse`, `var` | 1a | ✓ |
 | F-063 | Backquote command substitution in mkfile | `lex`, `var` | 1b | ◐ (lex done) |
-| F-066 | Glob expansion in assignments | `var` | 2 | — |
+| F-066 | Glob expansion in prerequisites | `graph` | 3 | ✓ |
 | F-067 | `-f mkfile` flag | `cli` | 1a | — |
 
 ## Variables
@@ -87,7 +87,7 @@
 | F-031 | `$newprereq` variable | `var`, `recipe` | 2 | ✓ |
 | F-032 | `$newmember` variable | `var`, `recipe` | 3 | — |
 | F-038 | `$pid` variable | `var`, `recipe` | 1b | ✓ |
-| F-053 | `$MKSHELL` variable | `shell`, `cli` | 3 | ◐ (sh + flag parsing done, duckscript Shell impl pending) |
+| F-053 | `$MKSHELL` variable (sh, duckscript, custom shells) | `shell`, `cli` | 3 | ✓ |
 | F-054 | `$MKFLAGS` variable | `var` | 2 | ✓ |
 | F-055 | `$MKARGS` variable | `var` | 2 | ✓ |
 
@@ -142,7 +142,7 @@
 | **1a** | ████████ 22/22 ✅ | 22 | Parser, DAG, serial exec, core variables, attrs, scheduling |
 | **1b** | ████████ 12/12 ✅ | 12 | Includes, recipe-time vars, missing intermediates, CLI flags |
 | **2** | ████████ 22/22 ✅ | 22 | %/&/R metarules, NPROC parallel, namelists, pruning, includes |
-| **3** | █████░░░ 5/10 | 10 | Aggregates, P attribute, -d debug, duckscript, polish |
+| **3** | ██████░░ 8/10 | 10 | Aggregates, P attribute, -d debug, duckscript, polish |
 | **P3** | ░░░░░░░░ 0/4 | 4 | Plan 9 specifics ($O, membername) |
 
 *Phase 3: duckscript Shell (from cargo-make research), archive aggregates, -d debug, polish.*
