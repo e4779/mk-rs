@@ -674,6 +674,7 @@ fn check_stale(
         true
     } else {
         // File exists — check if prereqs are newer
+        // File exists — check if prereqs are newer
         let mtime = eff_mtime.unwrap();
         prereq_stale
             || node.arcs_in.iter().any(|&arc_idx| {

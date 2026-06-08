@@ -85,7 +85,7 @@
 | F-035 | `$stem` variable | `var`, `recipe` | 2 | ✓ |
 | F-036 | `$alltarget` variable | `var`, `recipe` | 2 | ✓ |
 | F-031 | `$newprereq` variable | `var`, `recipe` | 2 | ✓ |
-| F-032 | `$newmember` variable | `var`, `recipe` | 3 | — |
+| F-032 | `$newmember` variable (extract members from archive prereqs) | `recipe` | 3 | ✓ |
 | F-038 | `$pid` variable | `var`, `recipe` | 1b | ✓ |
 | F-053 | `$MKSHELL` variable (sh, duckscript, custom shells) | `shell`, `cli` | 3 | ✓ |
 | F-054 | `$MKFLAGS` variable | `var` | 2 | ✓ |
@@ -102,7 +102,7 @@
 | F-025 | Q attribute (quiet) | `attr`, `recipe` | 1a | ◐ (attr done) |
 | F-026 | U attribute (unconditionally updated) | `attr`, `graph` | 1b | ◐ (attr done) |
 | F-027 | n attribute (non-virtual-only metarule) | `attr`, `graph` | 2 | ✓ |
-| F-028 | P attribute (custom comparison) | `attr`, `graph` | 3 | ◐ (attr done) |
+| F-028 | P attribute (custom comparison program) | `attr`, `graph` | 3 | ✓ |
 | F-068 | Virtual target timestamp initialization | `attr`, `graph` | 1a | ✓ |
 
 ## CLI
@@ -142,7 +142,7 @@
 | **1a** | ████████ 22/22 ✅ | 22 | Parser, DAG, serial exec, core variables, attrs, scheduling |
 | **1b** | ████████ 12/12 ✅ | 12 | Includes, recipe-time vars, missing intermediates, CLI flags |
 | **2** | ████████ 22/22 ✅ | 22 | %/&/R metarules, NPROC parallel, namelists, pruning, includes |
-| **3** | ██████░░ 9/10
+| **3** | █████████ 10/10
 | **P3** | ░░░░░░░░ 0/4 | 4 | Plan 9 specifics ($O, membername) |
 
 *Phase 3: duckscript Shell (from cargo-make research), archive aggregates, -d debug, polish.*
