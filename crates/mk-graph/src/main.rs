@@ -24,7 +24,10 @@ use mk_rs_core::parse::{self, Stmt};
 /// Pipe to graphviz: mk-graph | dot -Tsvg > graph.svg
 /// Check mode: mk-graph --check
 #[derive(Parser)]
-#[command(version, about)]
+#[command(
+    version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("GIT_HASH"), ")"),
+    about
+)]
 struct Cli {
     /// Mkfile to read (default: mkfile)
     #[arg(short = 'f', default_value = "mkfile")]
