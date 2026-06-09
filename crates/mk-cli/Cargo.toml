@@ -13,8 +13,8 @@ default = []
 duckscript = ["mk-rs-shell/duckscript"]
 
 [dependencies]
-mk-rs-core = { path = "../mk-core" }
-mk-rs-shell = { path = "../mk-shell" }
+mk-rs-core = { path = "../mk-core", version = "0.1.0" }
+mk-rs-shell = { path = "../mk-shell", version = "0.1.0" }
 clap = { version = "4", features = ["derive"] }
 
 [[bin]]
