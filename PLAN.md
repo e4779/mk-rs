@@ -1371,6 +1371,8 @@ Based on toonq v0.2.4 release experience:
 
 ### Version policy
 
-Semantic versioning. mk-rs (binary crate) version is the public version.
+Semantic versioning. Current: `0.1.0`.
+Patches (bugfixes, docs, infra) → `0.1.x`. Minor (new features) → `0.x.0`.
+mk-cli (binary crate) version is the public version.
 mk-core and mk-shell are internal workspace crates — not published to crates.io.
 Only `cargo publish -p mk-rs` (the CLI).
