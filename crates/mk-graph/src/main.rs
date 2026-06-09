@@ -6,21 +6,23 @@
 // Usage:
 //   mk-graph                              # DOT to stdout
 //   mk-graph --json                       # JSON to stdout
-//   mk-graph --target <name>              # subgraph for target
-//   mk-graph -f <mkfile> --json           # specific mkfile
+//   mk-graph --dead-ends                  # list dead-end targets
+//   mk-graph --orphans                    # list orphan prerequisites
+//   mk-graph --check                      # run all checks
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use clap::Parser;
 use mk_rs_core::graph::{self, GraphScope};
 use mk_rs_core::lex::{tokenize, ShellMode};
-use mk_rs_core::parse;
+use mk_rs_core::parse::{self, Stmt};
 
-/// Visualize the dependency graph of an mkfile.
+/// Visualize and check the dependency graph of an mkfile.
 ///
 /// Outputs the graph in DOT format (default) or JSON.
-/// Pipe to graphviz for rendering: mk-graph | dot -Tsvg > graph.svg
+/// Pipe to graphviz: mk-graph | dot -Tsvg > graph.svg
+/// Check mode: mk-graph --check
 #[derive(Parser)]
 #[command(version, about)]
 struct Cli {
@@ -35,6 +37,18 @@ struct Cli {
     /// Show subgraph for a specific target
     #[arg(long = "target", short = 't')]
     target: Option<String>,
+
+    /// List targets that are produced but never consumed
+    #[arg(long = "dead-ends")]
+    dead_ends: bool,
+
+    /// List prerequisites that are needed but have no rule and don't exist
+    #[arg(long = "orphans")]
+    orphans: bool,
+
+    /// Run all checks: dead-ends + orphans
+    #[arg(long = "check")]
+    check: bool,
 }
 
 fn main() {
@@ -55,16 +69,62 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let tokens = tokenize(&text, ShellMode::Sh)?;
     let stmts = parse::parse(&tokens)?;
 
+    // Build recipe lookup: target_name → recipe_text
+    let recipes: HashMap<String, String> = stmts.iter()
+        .filter_map(|s| if let Stmt::Rule(r) = s { Some(r) } else { None })
+        .filter_map(|r| r.recipe.clone().map(|rec| (r.targets[0].clone(), rec)))
+        .collect();
+
     // Build graph with all concrete targets
     let target_names: Vec<String> = stmts.iter()
-        .filter_map(|s| if let parse::Stmt::Rule(r) = s { Some(r) } else { None })
+        .filter_map(|s| if let Stmt::Rule(r) = s { Some(r) } else { None })
         .flat_map(|r| r.targets.iter().cloned())
         .filter(|t| !t.contains('%') && !t.contains('&'))
         .collect();
 
     let graph = graph::build_graph(&stmts, &target_names)?;
 
-    // Output
+    // ── Check modes ──────────────────────────────────────────────────
+    let do_dead = cli.dead_ends || cli.check;
+    let do_orphans = cli.orphans || cli.check;
+    let check_mode = do_dead || do_orphans;
+
+    let mut errors = 0;
+
+    if do_dead {
+        let dead = find_dead_ends(&graph);
+        if dead.is_empty() {
+            eprintln!("mk-graph: no dead-end targets found");
+        } else {
+            eprintln!("mk-graph: {} dead-end target(s):", dead.len());
+            for name in &dead {
+                eprintln!("  {}", name);
+            }
+            errors += dead.len();
+        }
+    }
+
+    if do_orphans {
+        let orph = find_orphans(&graph);
+        if orph.is_empty() {
+            eprintln!("mk-graph: no orphan prerequisites found");
+        } else {
+            eprintln!("mk-graph: {} orphan prerequisite(s):", orph.len());
+            for name in &orph {
+                eprintln!("  {}", name);
+            }
+            errors += orph.len();
+        }
+    }
+
+    if check_mode {
+        if errors > 0 {
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+
+    // ── Graph output ─────────────────────────────────────────────────
     let scope = if cli.target.is_some() {
         GraphScope::Subgraph
     } else {
@@ -72,7 +132,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     if cli.json {
-        println!("{}", to_json(&graph, scope, cli.target.as_deref()));
+        println!("{}", to_json(&graph, &recipes, scope, cli.target.as_deref()));
     } else {
         println!("{}", graph.to_dot(scope, cli.target.as_deref()));
     }
@@ -80,10 +140,50 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+// ── Dead-end detection ──────────────────────────────────────────────────
+
+/// Find targets that are produced (appear as `to` in an edge) but never
+/// consumed (never appear as `from` in any edge). These are "output-only"
+/// nodes — they exist in the graph but nothing depends on them.
+fn find_dead_ends(graph: &graph::Graph) -> Vec<String> {
+    let consumed: HashSet<graph::NodeIndex> = graph.arcs.iter()
+        .map(|a| a.from)
+        .collect();
+
+    let produced: HashSet<graph::NodeIndex> = graph.arcs.iter()
+        .map(|a| a.to)
+        .collect();
+
+    produced.difference(&consumed)
+        .map(|idx| graph.nodes[idx.0].name.clone())
+        .collect()
+}
+
+// ── Orphan detection ─────────────────────────────────────────────────────
+
+/// Find prerequisites that are needed (appear as `from` in an edge) but
+/// are never produced (never appear as `to` in any edge) and have no mtime.
+/// These are inputs that don't exist and can't be built.
+fn find_orphans(graph: &graph::Graph) -> Vec<String> {
+    let produced: HashSet<graph::NodeIndex> = graph.arcs.iter()
+        .map(|a| a.to)
+        .collect();
+
+    let needed: HashSet<graph::NodeIndex> = graph.arcs.iter()
+        .map(|a| a.from)
+        .collect();
+
+    // Orphan: needed as prereq, never produced, not on disk
+    needed.difference(&produced)
+        .filter(|idx| graph.nodes[idx.0].mtime.is_none())
+        .map(|idx| graph.nodes[idx.0].name.clone())
+        .collect()
+}
+
 // ── JSON export ──────────────────────────────────────────────────────────
 
-/// Export graph as JSON with stage heuristic.
-fn to_json(graph: &graph::Graph, scope: GraphScope, root: Option<&str>) -> String {
+/// Export graph as JSON with stage heuristic and recipe text.
+fn to_json(graph: &graph::Graph, recipes: &HashMap<String, String>, scope: GraphScope, root: Option<&str>) -> String {
     let included: HashSet<graph::NodeIndex> = match scope {
         GraphScope::All => (0..graph.nodes.len()).map(graph::NodeIndex).collect(),
         GraphScope::Subgraph => {
@@ -105,11 +205,16 @@ fn to_json(graph: &graph::Graph, scope: GraphScope, root: Option<&str>) -> Strin
         .map(|(_, node)| {
             let kind = if node.flags.is_virtual() { "virtual" } else { "file" };
             let stage = stage_heuristic(&node.name, node.flags.is_virtual());
-            serde_json::json!({
+            let recipe = recipes.get(&node.name);
+            let mut obj = serde_json::json!({
                 "id": node.name,
                 "kind": kind,
                 "stage": stage
-            })
+            });
+            if let Some(rec) = recipe {
+                obj["recipe"] = serde_json::Value::String(rec.clone());
+            }
+            obj
         })
         .collect();
 
@@ -168,11 +273,53 @@ mod tests {
         let input = "all: hello.o world.o\nhello.o: hello.c\n";
         let tokens = tokenize(input, ShellMode::Sh).unwrap();
         let stmts = parse::parse(&tokens).unwrap();
+        let recipes: HashMap<String, String> = stmts.iter()
+            .filter_map(|s| if let Stmt::Rule(r) = s { Some(r) } else { None })
+            .filter_map(|r| r.recipe.clone().map(|rec| (r.targets[0].clone(), rec)))
+            .collect();
         let targets = vec!["all".into()];
         let g = graph::build_graph(&stmts, &targets).unwrap();
-        let json = to_json(&g, GraphScope::All, None);
+        let json = to_json(&g, &recipes, GraphScope::All, None);
         assert!(json.contains("\"nodes\""));
         assert!(json.contains("\"edges\""));
         assert!(json.contains("hello.c"));
+    }
+
+    #[test]
+    fn json_includes_recipe_text() {
+        let input = "all:V: hello.c\n\techo build\n";
+        let tokens = tokenize(input, ShellMode::Sh).unwrap();
+        let stmts = parse::parse(&tokens).unwrap();
+        let recipes: HashMap<String, String> = stmts.iter()
+            .filter_map(|s| if let Stmt::Rule(r) = s { Some(r) } else { None })
+            .filter_map(|r| r.recipe.clone().map(|rec| (r.targets[0].clone(), rec)))
+            .collect();
+        let targets = vec!["all".into()];
+        let g = graph::build_graph(&stmts, &targets).unwrap();
+        let json = to_json(&g, &recipes, GraphScope::All, None);
+        assert!(json.contains("echo build"));
+    }
+
+    #[test]
+    fn dead_ends_detects_output_only() {
+        let input = "a: b\nb:\n";
+        let tokens = tokenize(input, ShellMode::Sh).unwrap();
+        let stmts = parse::parse(&tokens).unwrap();
+        let g = graph::build_graph(&stmts, &["a".into()]).unwrap();
+        let dead = find_dead_ends(&g);
+        assert!(dead.contains(&"a".to_string()));
+        assert!(!dead.contains(&"b".to_string()));
+    }
+
+    #[test]
+    fn orphans_detects_missing_prereqs() {
+        let input = "a: b c\nd:\n";
+        let tokens = tokenize(input, ShellMode::Sh).unwrap();
+        let stmts = parse::parse(&tokens).unwrap();
+        let g = graph::build_graph(&stmts, &["a".into(), "d".into()]).unwrap();
+        let orph = find_orphans(&g);
+        // b and c have no rule and don't exist → virtual → orphans
+        assert!(orph.iter().any(|s| s == "b"));
+        assert!(orph.iter().any(|s| s == "c"));
     }
 }
