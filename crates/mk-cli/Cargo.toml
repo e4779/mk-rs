@@ -1,6 +1,6 @@
 [package]
 name = "mk-rs"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 description = "mk-rust CLI: Plan 9 mk compatible command-line tool"
 license = "MIT"
@@ -13,8 +13,8 @@ default = []
 duckscript = ["mk-rs-shell/duckscript"]
 
 [dependencies]
-mk-rs-core = { path = "../mk-core", version = "0.1.4" }
-mk-rs-shell = { path = "../mk-shell", version = "0.1.4" }
+mk-rs-core = { path = "../mk-core", version = "0.1.5" }
+mk-rs-shell = { path = "../mk-shell", version = "0.1.5" }
 clap = { version = "4", features = ["derive"] }
 
 [[bin]]
