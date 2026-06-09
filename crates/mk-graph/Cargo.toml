@@ -1,6 +1,6 @@
 [package]
 name = "mk-graph"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "Graph visualization for mk-rs: JSON, DOT export"
 license = "MIT"
@@ -9,8 +9,8 @@ keywords = ["mk", "graph", "dot", "json", "visualization"]
 categories = ["development-tools::build-utils"]
 
 [dependencies]
-mk-rs-core = { path = "../mk-core", version = "0.1.1" }
-mk-rs-shell = { path = "../mk-shell", version = "0.1.1" }
+mk-rs-core = { path = "../mk-core", version = "0.1.2" }
+mk-rs-shell = { path = "../mk-shell", version = "0.1.2" }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
