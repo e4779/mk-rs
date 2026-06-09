@@ -1,6 +1,6 @@
 # AGENTS.md — mk-rs
 
-Read README.md for features, API, and project overview.
+Explore the project: `ls`, `cargo test`, `cat Cargo.toml`. Read README.md for features and overview.
 
 ## Architecture decisions (rationale)
 
@@ -11,22 +11,6 @@ Read README.md for features, API, and project overview.
 3. **sh as default shell, not rc.** Validated by 9base research (also chose sh). Duckscript is an optional feature-gated alternative via `MKSHELL=duckscript` (or any shell via `MKSHELL=node -e`, `MKSHELL=python3 -c`). → `PLAN.md` §6.3, `README.md`
 
 4. **Separate mk-graph binary for visualization.** Keeps `mk` lean (no serde dep). JSON/DOT export, dead-end detection, recipe text — all in mk-graph. → `README.md`
-
-## Workspace structure
-
-```
-crates/mk-core/    — lex, parse, graph, var, sched, recipe, shell, attr, archive, include
-crates/mk-shell/   — Shell trait + sh/duckscript implementations
-crates/mk-cli/     — `mk` binary (clap CLI, thin wrapper)
-crates/mk-graph/   — `mk-graph` binary (DOT/JSON export, dead-ends, orphans)
-```
-
-## Testing
-
-- **mk-core**: 265 unit tests (parse, graph, lex, var, attr, sched, recipe)
-- **mk-shell**: 13 tests (sh shell, custom shells)
-- **mk-graph**: 4 tests (JSON export, dead-ends, orphans)
-- **testdata/**: 43 real-world mkfiles from plan9port, 9legacy, ctSkennerton, mksite
 
 ## Gotchas
 
