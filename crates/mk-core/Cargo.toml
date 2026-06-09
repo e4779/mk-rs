@@ -1,6 +1,6 @@
 [package]
 name = "mk-rs-core"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "mk-rust core: lexer, parser, DAG builder, scheduler"
 license = "MIT"
