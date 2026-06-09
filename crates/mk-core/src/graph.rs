@@ -806,56 +806,6 @@ impl Graph {
     ///
     /// Each node has `id`, `kind` ("file" or "virtual"), and `stage`
     /// (heuristic: "raw", "processed", "report", or "virtual").
-    /// Edges have `from`, `to`, and `line` (mkfile line number).
-    pub fn to_json(&self, scope: GraphScope, root: Option<&str>) -> String {
-        let included = match scope {
-            GraphScope::All => (0..self.nodes.len()).map(NodeIndex).collect(),
-            GraphScope::Subgraph => {
-                let root_idx = root
-                    .and_then(|n| self.nodes.iter().position(|node| node.name == n))
-                    .map(NodeIndex);
-                match root_idx {
-                    Some(idx) => self.reachable_from(idx),
-                    None => {
-                        eprintln!("mk: --graph: target '{}' not found", root.unwrap_or(""));
-                        return String::new();
-                    }
-                }
-            }
-        };
-
-        // Build nodes array
-        let nodes: Vec<serde_json::Value> = self.nodes.iter().enumerate()
-            .filter(|(i, _)| included.contains(&NodeIndex(*i)))
-            .map(|(_, node)| {
-                let kind = if node.flags.is_virtual() { "virtual" } else { "file" };
-                let stage = stage_heuristic(&node.name, node.flags.is_virtual());
-                serde_json::json!({
-                    "id": node.name,
-                    "kind": kind,
-                    "stage": stage
-                })
-            })
-            .collect();
-
-        // Build edges array
-        let edges: Vec<serde_json::Value> = self.arcs.iter()
-            .filter(|arc| included.contains(&arc.from) && included.contains(&arc.to))
-            .map(|arc| {
-                serde_json::json!({
-                    "from": self.nodes[arc.from.0].name,
-                    "to": self.nodes[arc.to.0].name,
-                    "line": arc.line
-                })
-            })
-            .collect();
-
-        let output = serde_json::json!({
-            "nodes": nodes,
-            "edges": edges
-        });
-        serde_json::to_string(&output).unwrap_or_default()
-    }
 
     /// Collect all nodes reachable from `start` via outgoing edges.
     fn reachable_from(&self, start: NodeIndex) -> std::collections::HashSet<NodeIndex> {
@@ -870,29 +820,6 @@ impl Graph {
             }
         }
         visited
-    }
-}
-
-/// Guess the pipeline stage from a file path.
-///
-/// Heuristic:
-/// - `data/raw/*` → "raw"
-/// - `data/processed/*` or `data/bars/*` → "processed"
-/// - `reports/*` or `templates/*` → "report"
-/// - Virtual targets → "virtual"
-/// - Everything else → "file"
-fn stage_heuristic(name: &str, is_virtual: bool) -> &'static str {
-    if is_virtual {
-        return "virtual";
-    }
-    if name.starts_with("data/raw/") {
-        "raw"
-    } else if name.starts_with("data/processed/") || name.starts_with("data/bars/") {
-        "processed"
-    } else if name.starts_with("reports/") || name.starts_with("templates/") {
-        "report"
-    } else {
-        "file"
     }
 }
 
@@ -1687,54 +1614,5 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    // ── JSON graph export ─────────────────────────────────────────────
-
-    #[test]
-    fn json_graph_export_nodes_and_edges() {
-        let input = "all: hello.o world.o\nhello.o: hello.c\nworld.o: world.c util.h\n";
-        let tokens = tokenize(input, ShellMode::Sh).unwrap();
-        let stmts = parse::parse(&tokens).unwrap();
-        let targets = vec!["all".into()];
-        let graph = build_graph(&stmts, &targets).unwrap();
-        let json = graph.to_json(GraphScope::All, None);
-        assert!(json.contains("\"nodes\""));
-        assert!(json.contains("\"edges\""));
-        assert!(json.contains("hello.c"));
-        assert!(json.contains("hello.o"));
-        assert!(json.contains("\"kind\""));
-        assert!(json.contains("\"stage\""));
-    }
-
-    #[test]
-    fn json_node_has_stage_heuristic() {
-        let input = "reports/r.html: data/raw/a.toon data/processed/b.toon meta\n";
-        let tokens = tokenize(input, ShellMode::Sh).unwrap();
-        let stmts = parse::parse(&tokens).unwrap();
-        let targets = vec!["reports/r.html".into()];
-        let graph = build_graph(&stmts, &targets).unwrap();
-        let json = graph.to_json(GraphScope::All, None);
-        // data/raw/* → raw
-        assert!(json.contains("\"stage\":\"raw\""));
-        // data/processed/* → processed
-        assert!(json.contains("\"stage\":\"processed\""));
-        // reports/* → report
-        assert!(json.contains("\"stage\":\"report\""));
-        // unknown file → file
-        assert!(json.contains("\"stage\":\"file\""));
-    }
-
-    #[test]
-    fn json_subgraph_only_includes_reachable_nodes() {
-        let input = "a: b\nb: c\nd: e\n";
-        let tokens = tokenize(input, ShellMode::Sh).unwrap();
-        let stmts = parse::parse(&tokens).unwrap();
-        let targets = vec!["a".into(), "d".into()];
-        let graph = build_graph(&stmts, &targets).unwrap();
-        let json = graph.to_json(GraphScope::Subgraph, Some("a"));
-        assert!(json.contains("\"id\":\"a\""));
-        assert!(json.contains("\"id\":\"b\""));
-        assert!(json.contains("\"id\":\"c\""));
-        assert!(!json.contains("\"id\":\"d\""));
-        assert!(!json.contains("\"id\":\"e\""));
-    }
 }
+

@@ -3,5 +3,6 @@ members = [
     "crates/mk-core",
     "crates/mk-shell",
     "crates/mk-cli",
+    "crates/mk-graph",
 ]
 resolver = "2"

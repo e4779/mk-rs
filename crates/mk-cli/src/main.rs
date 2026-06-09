@@ -85,10 +85,6 @@ struct Cli {
     #[arg(long = "graph-of")]
     graph_of: Option<String>,
 
-    /// Output graph in JSON instead of DOT (use with --graph or --graph-of)
-    #[arg(long = "json")]
-    json: bool,
-
     /// Targets to build (default: first target in mkfile)
     targets: Vec<String>,
 }
@@ -209,7 +205,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Build DAG
     let mut graph = build_graph(&stmts, &target_names)?;
 
-    // --graph / --graph-of: output DOT (or JSON with --json) and exit
+    // --graph / --graph-of: output DOT and exit
     if cli.graph || cli.graph_of.is_some() {
         use mk_rs_core::graph::GraphScope;
         let scope = if cli.graph_of.is_some() {
@@ -217,16 +213,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             GraphScope::All
         };
-        if cli.json {
-            let json_out = graph.to_json(scope, cli.graph_of.as_deref());
-            if !json_out.is_empty() {
-                println!("{}", json_out);
-            }
-        } else {
-            let dot = graph.to_dot(scope, cli.graph_of.as_deref());
-            if !dot.is_empty() {
-                println!("{}", dot);
-            }
+        let dot = graph.to_dot(scope, cli.graph_of.as_deref());
+        if !dot.is_empty() {
+            println!("{}", dot);
         }
         return Ok(());
     }

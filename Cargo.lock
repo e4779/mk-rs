@@ -883,6 +883,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "mk-graph"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "mk-rs-core",
+ "mk-rs-shell",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "mk-rs"
 version = "0.1.0"
 dependencies = [
@@ -897,8 +908,6 @@ version = "0.1.0"
 dependencies = [
  "glob",
  "regex",
- "serde",
- "serde_json",
  "thiserror",
 ]
 
