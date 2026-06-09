@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - v[0-9]+.[0-9]+.[0-9]+
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container:
+      image: rust:latest
+    steps:
+      - run: git clone https://gitverse.ru/${{ github.repository }}.git .
+      - run: cargo build --verbose
+      - run: cargo test --verbose
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-latest
+    container:
+      image: rust:latest
+    steps:
+      - run: |
+          git clone https://gitverse.ru/${{ github.repository }}.git .
+          git checkout ${{ github.ref_name }}
+
+      - name: Verify version matches tag
+        run: |
+          version=$(grep '^version' crates/mk-cli/Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          test "v$version" = "${{ github.ref_name }}"
+
+      - name: Dry run
+        run: |
+          git rev-parse --short HEAD > GIT_HASH
+          git add -f GIT_HASH
+          cargo publish --dry-run -p mk-rs --allow-dirty
+
+      - name: Publish to crates.io
+        run: |
+          git rev-parse --short HEAD > GIT_HASH
+          git add -f GIT_HASH
+          cargo publish -p mk-rs --allow-dirty
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

@@ -1337,3 +1337,40 @@ Larger multi-file mkfiles for end-to-end validation:
 4. **CLI flags to adopt**: `--loglevel` (debug levels), `--env KEY=VALUE` (override), `--print-steps` (like `mk -n`), `--cwd` (working dir).
 
 5. **Explicitly NOT adopting**: plugin system, task inheritance (`extend`/`clear`), profiles, workspaces, Shell2Batch, inline `@rust`.
+
+## 9. Release preparation
+
+### Pre-publication checklist
+
+Based on toonq v0.2.4 release experience:
+
+- [ ] Version bump in `crates/mk-cli/Cargo.toml` (0.1.0 → 1.0.0 or whatever)
+- [ ] `mk --version` / `mk-graph --version` show git hash (build.rs done)
+- [ ] `cargo publish --dry-run -p mk-rs` — no errors, no warnings
+- [ ] CI pipeline (`.gitverse/workflows/ci.yml`): build + test on push, publish on tags
+- [ ] crates.io token in GitVerse secrets (`CARGO_REGISTRY_TOKEN`)
+- [ ] `git tag v0.1.0` + push tag triggers publish
+- [ ] GitHub mirror: push to `git@github.com:e4779/mk-rs.git`
+- [ ] README: install instructions (`cargo install mk-rs`), quick start, links
+- [ ] CHANGELOG.md or release notes
+- [ ] Man page (`docs/mk.1.md`) complete
+- [ ] License (MIT) in Cargo.toml + LICENSE file
+- [ ] Keywords/categories in Cargo.toml
+- [ ] Documentation link (docs.rs or repo docs/)
+- [ ] No stale TODO comments in code
+- [ ] No `unwrap()` without justification
+- [ ] Clippy clean: `cargo clippy -- -D warnings`
+- [ ] No debug prints (`eprintln!`, `dbg!`)
+- [ ] Workspace crates (`mk-rs-core`, `mk-rs-shell`) have correct versions
+
+### CI pipeline
+
+`.gitverse/workflows/ci.yml`:
+- **test**: `cargo build --verbose` + `cargo test --verbose` on every push/PR
+- **publish**: verify version matches tag, dry-run, publish to crates.io on `v*` tags
+
+### Version policy
+
+Semantic versioning. mk-rs (binary crate) version is the public version.
+mk-core and mk-shell are internal workspace crates — not published to crates.io.
+Only `cargo publish -p mk-rs` (the CLI).
