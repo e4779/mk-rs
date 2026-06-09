@@ -19,3 +19,4 @@ Explore the project: `ls`, `cargo test`, `cat Cargo.toml`. Read README.md for fe
 - `=` and `:` inside recipe text are NOT split by the lexer (`in_recipe` flag). Recipe lines after TAB are opaque.
 - Virtual targets must be explicit (`:V:`) — the graph builder doesn't auto-mark orphan prereqs as virtual.
 - Glob expansion (`*.toon`) happens at graph-build time, not at recipe execution time.
+- `cargo publish` creates a tarball without `.git`. build.rs reads `GIT_HASH` file first, falls back to `git rev-parse`. CI creates `crates/mk-cli/GIT_HASH` before publish.

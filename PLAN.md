@@ -1344,24 +1344,26 @@ Larger multi-file mkfiles for end-to-end validation:
 
 Based on toonq v0.2.4 release experience:
 
-- [ ] Version bump in `crates/mk-cli/Cargo.toml` (0.1.0 → 1.0.0 or whatever)
-- [ ] `mk --version` / `mk-graph --version` show git hash (build.rs done)
+- [x] Version bump in `crates/mk-cli/Cargo.toml` (0.1.0)
+- [x] `mk --version` / `mk-graph --version` show git hash (build.rs done)
+- [x] Git hash survives `cargo publish` (GIT_HASH file + fallback to git rev-parse)
 - [ ] `cargo publish --dry-run -p mk-rs` — no errors, no warnings
-- [ ] CI pipeline (`.gitverse/workflows/ci.yml`): build + test on push, publish on tags
+- [x] CI pipeline (`.gitverse/workflows/ci.yml`): build + test on push, publish on tags
 - [ ] crates.io token in GitVerse secrets (`CARGO_REGISTRY_TOKEN`)
 - [ ] `git tag v0.1.0` + push tag triggers publish
-- [ ] GitHub mirror: push to `git@github.com:e4779/mk-rs.git`
-- [ ] README: install instructions (`cargo install mk-rs`), quick start, links
+- [x] GitHub mirror: push to `git@github.com:e4779/mk-rs.git`
+- [x] README: install instructions, quick start, --graph, --json, links
 - [ ] CHANGELOG.md or release notes
-- [ ] Man page (`docs/mk.1.md`) complete
-- [ ] License (MIT) in Cargo.toml + LICENSE file
-- [ ] Keywords/categories in Cargo.toml
-- [ ] Documentation link (docs.rs or repo docs/)
-- [ ] No stale TODO comments in code
-- [ ] No `unwrap()` without justification
-- [ ] Clippy clean: `cargo clippy -- -D warnings`
-- [ ] No debug prints (`eprintln!`, `dbg!`)
-- [ ] Workspace crates (`mk-rs-core`, `mk-rs-shell`) have correct versions
+- [x] Man page (`docs/mk.1.md`) complete
+- [x] License (MIT) in Cargo.toml + LICENSE file
+- [x] Keywords/categories in Cargo.toml
+- [x] Documentation link (docs.rs or repo docs/)
+- [x] No stale TODO comments or debug prints in lib code
+- [x] No unwrap() without justification (sched mutex + graph checks are justified)
+- [x] Clippy clean: `cargo clippy -- -D warnings`
+- [x] All documentation in English
+- [x] AGENTS.md: 4 architecture decisions + 5 gotchas (20 lines)
+- [x] Workspace crates (mk-rs-core, mk-rs-shell) have correct versions
 
 ### CI pipeline
 
