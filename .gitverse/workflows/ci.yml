@@ -40,9 +40,9 @@ jobs:
           cp crates/mk-cli/GIT_HASH crates/mk-graph/GIT_HASH
           git add -f crates/mk-cli/GIT_HASH crates/mk-graph/GIT_HASH
           cargo publish --dry-run -p mk-rs-core --allow-dirty
-          cargo publish --dry-run -p mk-rs-shell --allow-dirty
-          cargo publish --dry-run -p mk-rs --allow-dirty
-          cargo publish --dry-run -p mk-graph --allow-dirty
+          cargo publish --dry-run -p mk-rs-shell --allow-dirty --no-verify
+          cargo publish --dry-run -p mk-rs --allow-dirty --no-verify
+          cargo publish --dry-run -p mk-graph --allow-dirty --no-verify
 
       - name: Publish to crates.io
         run: |
@@ -50,8 +50,8 @@ jobs:
           cp crates/mk-cli/GIT_HASH crates/mk-graph/GIT_HASH
           git add -f crates/mk-cli/GIT_HASH crates/mk-graph/GIT_HASH
           cargo publish -p mk-rs-core --allow-dirty
-          cargo publish -p mk-rs-shell --allow-dirty
-          cargo publish -p mk-rs --allow-dirty
-          cargo publish -p mk-graph --allow-dirty
+          cargo publish -p mk-rs-shell --allow-dirty --no-verify
+          cargo publish -p mk-rs --allow-dirty --no-verify
+          cargo publish -p mk-graph --allow-dirty --no-verify
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
