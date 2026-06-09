@@ -4,13 +4,13 @@ Read README.md for features, API, and project overview.
 
 ## Architecture decisions (rationale)
 
-1. **Arena-based DAG (Vec + indices), not Rc/RefCell.** Contiguous memory, no cycles, deterministic drop. `NodeIndex(usize)` and `ArcIndex(usize)` newtypes for safety. After build, the graph is immutable.
+1. **Arena-based DAG (Vec + indices), not Rc/RefCell.** Contiguous memory, no cycles, deterministic drop. `NodeIndex(usize)` and `ArcIndex(usize)` newtypes for safety. After build, the graph is immutable. → `docs/implementation-comparison.md` §6.2, `docs/mk-spec.md` F-006
 
-2. **Crossbeam/sync threads, not tokio.** Recipe execution is inherently blocking (`Command::status()`). No async runtime needed. `sync::thread::scope` for NPROC-based worker pool.
+2. **Crossbeam/sync threads, not tokio.** Recipe execution is inherently blocking (`Command::status()`). No async runtime needed. `sync::thread::scope` for NPROC-based worker pool. → `PLAN.md` §6.1
 
-3. **sh as default shell, not rc.** Validated by 9base research (also chose sh). Duckscript is an optional feature-gated alternative via `MKSHELL=duckscript` (or any shell via `MKSHELL=node -e`, `MKSHELL=python3 -c`).
+3. **sh as default shell, not rc.** Validated by 9base research (also chose sh). Duckscript is an optional feature-gated alternative via `MKSHELL=duckscript` (or any shell via `MKSHELL=node -e`, `MKSHELL=python3 -c`). → `PLAN.md` §6.3, `README.md`
 
-4. **Separate mk-graph binary for visualization.** Keeps `mk` lean (no serde dep). JSON/DOT export, dead-end detection, recipe text — all in mk-graph.
+4. **Separate mk-graph binary for visualization.** Keeps `mk` lean (no serde dep). JSON/DOT export, dead-end detection, recipe text — all in mk-graph. → `README.md`
 
 ## Workspace structure
 
