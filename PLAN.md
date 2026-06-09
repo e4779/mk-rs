@@ -1347,13 +1347,13 @@ Based on toonq v0.2.4 release experience:
 - [x] Version bump in `crates/mk-cli/Cargo.toml` (0.1.0)
 - [x] `mk --version` / `mk-graph --version` show git hash (build.rs done)
 - [x] Git hash survives `cargo publish` (GIT_HASH file + fallback to git rev-parse)
-- [ ] `cargo publish --dry-run -p mk-rs` — no errors, no warnings
+- [x] `cargo publish --dry-run -p mk-rs` — no errors, no warnings
 - [x] CI pipeline (`.gitverse/workflows/ci.yml`): build + test on push, publish on tags
-- [ ] crates.io token in GitVerse secrets (`CARGO_REGISTRY_TOKEN`)
-- [ ] `git tag v0.1.0` + push tag triggers publish
+- [x] crates.io token in GitVerse secrets (`CARGO_REGISTRY_TOKEN`)
+- [x] `git tag v0.1.0` + push tag triggers publish
 - [x] GitHub mirror: push to `git@github.com:e4779/mk-rs.git`
 - [x] README: install instructions, quick start, --graph, --json, links
-- [ ] CHANGELOG.md or release notes
+- [x] CHANGELOG.md or release notes
 - [x] Man page (`docs/mk.1.md`) complete
 - [x] License (MIT) in Cargo.toml + LICENSE file
 - [x] Keywords/categories in Cargo.toml
