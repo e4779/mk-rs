@@ -36,14 +36,14 @@ jobs:
 
       - name: Dry run
         run: |
-          git rev-parse --short HEAD > GIT_HASH
-          git add -f GIT_HASH
+          git rev-parse --short HEAD > crates/mk-cli/GIT_HASH
+          git add -f crates/mk-cli/GIT_HASH
           cargo publish --dry-run -p mk-rs --allow-dirty
 
       - name: Publish to crates.io
         run: |
-          git rev-parse --short HEAD > GIT_HASH
-          git add -f GIT_HASH
+          git rev-parse --short HEAD > crates/mk-cli/GIT_HASH
+          git add -f crates/mk-cli/GIT_HASH
           cargo publish -p mk-rs --allow-dirty
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

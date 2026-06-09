@@ -1,5 +1,6 @@
 target/
 /tmp/
+GIT_HASH
 testdata/**/hello
 testdata/**/prog
 testdata/**/*.o
