@@ -7,21 +7,31 @@
 use crate::error::IncludeError;
 use crate::lex::{tokenize, ShellMode};
 use crate::parse::{parse, Stmt};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 // ── IncludeContext ─────────────────────────────────────────────────────────
 
-/// Tracks the include chain for circular-dependency detection.
+/// Tracks the include chain for circular-dependency detection
+/// and a set of all already-parsed files to prevent duplicate parsing
+/// in diamond include scenarios.
 #[derive(Debug, Clone)]
 pub struct IncludeContext {
     /// Stack of canonical paths currently being included.
     pub chain: Vec<PathBuf>,
+    /// Set of canonical paths that have already been parsed.
+    /// Prevents double-parsing when the same file is included from
+    /// multiple branches (diamond includes).
+    pub seen: HashSet<PathBuf>,
 }
 
 impl IncludeContext {
-    /// Create a fresh include context with an empty chain.
+    /// Create a fresh include context with an empty chain and empty seen set.
     pub fn new() -> Self {
-        IncludeContext { chain: Vec::new() }
+        IncludeContext {
+            chain: Vec::new(),
+            seen: HashSet::new(),
+        }
     }
 
     /// Resolve, read, lex, and parse an included mkfile.
@@ -58,6 +68,11 @@ impl IncludeContext {
             return Err(IncludeError::CircularInclude { chain: chain_str });
         }
 
+        // 2b. Duplicate detection — skip if already parsed (diamond includes)
+        if self.seen.contains(&canonical) {
+            return Ok(Vec::new());
+        }
+
         // 3. Read file
         let content = std::fs::read_to_string(&canonical).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
@@ -86,6 +101,10 @@ impl IncludeContext {
             })
         })();
         self.chain.pop();
+
+        // Mark as seen after successful parse (even empty result)
+        self.seen.insert(canonical);
+
         result
     }
 
@@ -200,6 +219,37 @@ mod tests {
         assert!(result.is_err());
         // Chain must be clean even after error
         assert!(ctx.chain.is_empty());
+    }
+
+    #[test]
+    fn diamond_include_skipped_on_second_encounter() {
+        // A includes B and C, both include D — D should be parsed only once.
+        // Simulate this by including D twice via the same context.
+        let d = write_temp_mkfile("diamond_d.mk", "VAR = from_d\n");
+        let dir = std::env::temp_dir().join("mk_test_include");
+        let mut ctx = IncludeContext::new();
+
+        // First include of D — should succeed and parse the content.
+        let stmts1 = ctx.include_file(d.to_str().unwrap(), &dir).unwrap();
+        assert_eq!(stmts1.len(), 1, "first include of D should return statement");
+        assert!(ctx.seen.len() == 1, "D should be in seen set");
+
+        // Second include of D (from another branch) — should return empty.
+        let stmts2 = ctx.include_file(d.to_str().unwrap(), &dir).unwrap();
+        assert!(stmts2.is_empty(), "second include of D should be empty");
+    }
+
+    #[test]
+    fn diamond_include_chain_cleared() {
+        // After including D through B, the chain should be clean.
+        let d = write_temp_mkfile("diamond_chain_d.mk", "VAR = d_val\n");
+        let dir = std::env::temp_dir().join("mk_test_include");
+        let mut ctx = IncludeContext::new();
+
+        ctx.include_file(d.to_str().unwrap(), &dir).unwrap();
+        assert!(ctx.chain.is_empty(), "chain should be empty after include");
+        // D should still be marked as seen.
+        assert!(ctx.seen.len() == 1, "seen set should contain D");
     }
 
     #[test]

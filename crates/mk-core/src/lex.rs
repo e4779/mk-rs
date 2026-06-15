@@ -185,11 +185,11 @@ impl Lexer {
                     tokens.push(Token::Equals);
                 }
 
-                '<' if brace_depth == 0 && word.is_empty() => {
+                '<' if brace_depth == 0 && word.is_empty() && !self.in_recipe => {
                     tokens.push(Token::Include);
                 }
 
-                '|' if brace_depth == 0 && word.is_empty() => {
+                '|' if brace_depth == 0 && word.is_empty() && !self.in_recipe => {
                     tokens.push(Token::Pipe);
                 }
 
@@ -857,6 +857,46 @@ mod tests {
         assert_eq!(
             tokenize("   \n", ShellMode::Sh).unwrap(),
             tks(vec![Token::Indent, Token::Newline])
+        );
+    }
+
+    // ---- < and | inside recipe text are regular characters ----
+
+    #[test]
+    fn angle_in_recipe() {
+        // < inside a recipe line should be treated as regular text, not Include
+        assert_eq!(
+            tokenize("target:\n\tcat < file.txt\n", ShellMode::Sh).unwrap(),
+            tks(vec![
+                w("target"),
+                Token::Colon,
+                Token::Newline,
+                Token::Indent,
+                w("cat"),
+                w("<"),
+                w("file.txt"),
+                Token::Newline,
+            ])
+        );
+    }
+
+    #[test]
+    fn pipe_in_recipe() {
+        // | inside a recipe line should be treated as regular text, not Pipe
+        assert_eq!(
+            tokenize("target:\n\techo hello | grep world\n", ShellMode::Sh).unwrap(),
+            tks(vec![
+                w("target"),
+                Token::Colon,
+                Token::Newline,
+                Token::Indent,
+                w("echo"),
+                w("hello"),
+                w("|"),
+                w("grep"),
+                w("world"),
+                Token::Newline,
+            ])
         );
     }
 
