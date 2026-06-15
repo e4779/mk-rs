@@ -242,7 +242,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                                 rules.insert(node.name.clone(), ResolvedRule {
                                     recipe: r.recipe.clone().unwrap_or_default(),
                                     attributes: r.attributes,
-                                    all_targets: r.targets.clone(),
+                                    all_targets: vec![node.name.clone()], // concrete target, not pattern %.o
                                 });
                             }
                         }
