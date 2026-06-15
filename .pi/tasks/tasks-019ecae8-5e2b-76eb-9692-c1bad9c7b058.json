@@ -1,0 +1,27 @@
+{
+  "nextId": 3,
+  "tasks": [
+    {
+      "id": "1",
+      "subject": "Fix Bug 1: $$ does NOT escape $ in recipes",
+      "description": "In crates/mk-core/src/recipe.rs, in the run() function, before passing script to shell.execute(), replace all occurrences of $$ with $. Must handle edge case: $$$ → $$ (two literal $, not one). Add test in recipe.rs.",
+      "status": "completed",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1781520693285,
+      "updatedAt": 1781520808783
+    },
+    {
+      "id": "2",
+      "subject": "Fix Bug 2: $(wildcard ...) in prereqs causes perpetual staleness",
+      "description": "Detect $(...) syntax in prereq position and produce a clear parse error. Do NOT implement $(wildcard ...) — suggest using * glob patterns instead. Catch during parsing in parse.rs. Add test.",
+      "status": "completed",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1781520696467,
+      "updatedAt": 1781520808784
+    }
+  ]
+}

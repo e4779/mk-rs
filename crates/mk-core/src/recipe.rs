@@ -108,7 +108,9 @@ pub fn run(
     opts: &RecipeOptions,
 ) -> Result<ShellResult, RecipeError> {
     // Parser already strips indent — recipe text is already elided.
-    let script = recipe.script.clone();
+    // Replace $$ with $ — mk escapes dollar sign in recipes so the shell
+    // receives a literal $ rather than interpreting $$ (which sh expands to PID).
+    let script = escape_dollar_dollar(&recipe.script);
 
     // ── Quiet check ────────────────────────────────────────────────────
     let quiet = opts.silent || recipe.attributes.is_quiet();
@@ -226,6 +228,30 @@ fn extract_members(prereqs: &[String]) -> String {
         .join(" ")
 }
 
+/// Replace every occurrence of `$$` with `$` in recipe text.
+///
+/// Plan 9 mk escapes `$` in recipes as `$$`. Unlike variable expansion
+/// (where `$$` → literal `$` during expand()), recipes are passed to the
+/// shell. The shell interprets `$$` as the process PID, so we must convert
+/// `$$` to `$` before passing the script to `sh -c`.
+///
+/// The conversion is left-to-right: `$$$` becomes `$$`, `$$$$` becomes `$$`.
+fn escape_dollar_dollar(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let bytes = input.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'$' && i + 1 < bytes.len() && bytes[i + 1] == b'$' {
+            result.push('$');
+            i += 2;
+        } else {
+            result.push(bytes[i] as char);
+            i += 1;
+        }
+    }
+    result
+}
+
 /// If it does exist, leaves its mtime unchanged (mtime update requires
 /// the `filetime` crate, not yet available in Phase 1a).
 fn touch_target(target: &str) -> Result<(), RecipeError> {
@@ -259,6 +285,7 @@ mod tests {
         stdout: String,
         stderr: String,
         last_env: std::sync::Mutex<HashMap<String, String>>,
+        last_script: std::sync::Mutex<String>,
     }
 
     impl Shell for MockShell {
@@ -268,11 +295,12 @@ mod tests {
 
         fn execute(
             &self,
-            _recipe: &str,
+            recipe: &str,
             env: &HashMap<String, String>,
             _dir: &Path,
         ) -> Result<ShellResult, ShellError> {
             *self.last_env.lock().unwrap() = env.clone();
+            *self.last_script.lock().unwrap() = recipe.to_string();
             Ok(ShellResult {
                 exit_code: self.exit_code,
                 stdout: self.stdout.clone(),
@@ -357,6 +385,7 @@ mod tests {
             stdout: "ok\n".into(),
             stderr: String::new(),
             last_env: std::sync::Mutex::new(HashMap::new()),
+            last_script: std::sync::Mutex::new(String::new()),
         };
         let recipe = make_recipe();
         let result = run(&recipe, &shell, &RecipeOptions::default()).unwrap();
@@ -373,6 +402,7 @@ mod tests {
             stdout: String::new(),
             stderr: "error".into(),
             last_env: std::sync::Mutex::new(HashMap::new()),
+            last_script: std::sync::Mutex::new(String::new()),
         };
         let recipe = make_recipe();
         let result = run(&recipe, &shell, &RecipeOptions::default());
@@ -392,6 +422,7 @@ mod tests {
             stdout: "should not see this".into(),
             stderr: String::new(),
             last_env: std::sync::Mutex::new(HashMap::new()),
+            last_script: std::sync::Mutex::new(String::new()),
         };
         let recipe = make_recipe();
         let opts = RecipeOptions {
@@ -413,6 +444,7 @@ mod tests {
             stdout: String::new(),
             stderr: String::new(),
             last_env: std::sync::Mutex::new(HashMap::new()),
+            last_script: std::sync::Mutex::new(String::new()),
         };
         let mut recipe = make_recipe();
         // Use a temp-like target that won't conflict.
@@ -440,6 +472,7 @@ mod tests {
             stdout: String::new(),
             stderr: String::new(),
             last_env: std::sync::Mutex::new(HashMap::new()),
+            last_script: std::sync::Mutex::new(String::new()),
         };
         let mut recipe = make_recipe();
         recipe.target = "/tmp/mk-test-touch-existing".into();
@@ -470,6 +503,7 @@ mod tests {
             stdout: "quiet-output".into(),
             stderr: String::new(),
             last_env: std::sync::Mutex::new(HashMap::new()),
+            last_script: std::sync::Mutex::new(String::new()),
         };
         let mut recipe = make_recipe();
         recipe.attributes = Attributes::default().with(Attributes::QUIET);
@@ -487,6 +521,7 @@ mod tests {
             stdout: "silent-output".into(),
             stderr: String::new(),
             last_env: std::sync::Mutex::new(HashMap::new()),
+            last_script: std::sync::Mutex::new(String::new()),
         };
         let recipe = make_recipe();
         let opts = RecipeOptions {
@@ -507,6 +542,7 @@ mod tests {
             stdout: "ok".into(),
             stderr: String::new(),
             last_env: std::sync::Mutex::new(HashMap::new()),
+            last_script: std::sync::Mutex::new(String::new()),
         };
         let recipe = make_recipe();
         let opts = RecipeOptions {
@@ -526,6 +562,7 @@ mod tests {
             stdout: String::new(),
             stderr: "fail".into(),
             last_env: std::sync::Mutex::new(HashMap::new()),
+            last_script: std::sync::Mutex::new(String::new()),
         };
         let mut recipe = make_recipe();
         recipe.target = "/tmp/mk-test-delete-target".into();
@@ -553,6 +590,7 @@ mod tests {
             stdout: String::new(),
             stderr: "fail".into(),
             last_env: std::sync::Mutex::new(HashMap::new()),
+            last_script: std::sync::Mutex::new(String::new()),
         };
         let mut recipe = make_recipe();
         recipe.target = "/tmp/mk-test-delete-nonexistent".into();
@@ -604,6 +642,7 @@ mod tests {
             stdout: String::new(),
             stderr: String::new(),
             last_env: std::sync::Mutex::new(HashMap::new()),
+            last_script: std::sync::Mutex::new(String::new()),
         };
         let recipe = make_recipe();
         run(&recipe, &shell, &RecipeOptions::default()).unwrap();
@@ -628,6 +667,7 @@ mod tests {
             stdout: String::new(),
             stderr: String::new(),
             last_env: std::sync::Mutex::new(HashMap::new()),
+            last_script: std::sync::Mutex::new(String::new()),
         };
         let mut recipe = make_recipe();
         recipe.stem = Some("hello".into());
@@ -643,6 +683,7 @@ mod tests {
             stdout: String::new(),
             stderr: String::new(),
             last_env: std::sync::Mutex::new(HashMap::new()),
+            last_script: std::sync::Mutex::new(String::new()),
         };
         let recipe = make_recipe();
         run(&recipe, &shell, &RecipeOptions::default()).unwrap();
@@ -661,6 +702,7 @@ mod tests {
             stdout: String::new(),
             stderr: String::new(),
             last_env: std::sync::Mutex::new(HashMap::new()),
+            last_script: std::sync::Mutex::new(String::new()),
         };
         let recipe = Recipe {
             prereqs: vec!["lib.a(foo.o)".into(), "lib.a(bar.o)".into()],
@@ -681,6 +723,7 @@ mod tests {
             stdout: String::new(),
             stderr: String::new(),
             last_env: std::sync::Mutex::new(HashMap::new()),
+            last_script: std::sync::Mutex::new(String::new()),
         };
         let recipe = Recipe {
             prereqs: vec!["hello.c".into()],
@@ -701,6 +744,7 @@ mod tests {
             stdout: String::new(),
             stderr: String::new(),
             last_env: std::sync::Mutex::new(HashMap::new()),
+            last_script: std::sync::Mutex::new(String::new()),
         };
         let mut recipe = make_recipe();
         recipe.all_targets = vec!["hello".into(), "hello_debug".into()];
@@ -719,6 +763,7 @@ mod tests {
             stdout: String::new(),
             stderr: String::new(),
             last_env: std::sync::Mutex::new(HashMap::new()),
+            last_script: std::sync::Mutex::new(String::new()),
         };
         let recipe = make_recipe();
         run(&recipe, &shell, &RecipeOptions::default()).unwrap();
@@ -727,5 +772,89 @@ mod tests {
             env.get("alltarget").map(|s| s.as_str()),
             Some("hello")
         );
+    }
+
+    // ── $$ escape tests ────────────────────────────────────────────────
+
+    #[test]
+    fn dollar_dollar_escape_in_recipe() {
+        let shell = MockShell {
+            exit_code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+            last_env: std::sync::Mutex::new(HashMap::new()),
+            last_script: std::sync::Mutex::new(String::new()),
+        };
+        let mut recipe = make_recipe();
+        recipe.script = "echo $$prereq".into(); // recipe: echo $$prereq
+        run(&recipe, &shell, &RecipeOptions::default()).unwrap();
+        let script = shell.last_script.lock().unwrap();
+        // $$ should become $ in the script passed to shell
+        assert_eq!(*script, "echo $prereq", "$$ should convert to $");
+    }
+
+    #[test]
+    fn dollar_dollar_at_end_of_recipe() {
+        let shell = MockShell {
+            exit_code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+            last_env: std::sync::Mutex::new(HashMap::new()),
+            last_script: std::sync::Mutex::new(String::new()),
+        };
+        let mut recipe = make_recipe();
+        recipe.script = "echo $$".into();
+        run(&recipe, &shell, &RecipeOptions::default()).unwrap();
+        let script = shell.last_script.lock().unwrap();
+        assert_eq!(*script, "echo $", "$$ at end should become $");
+    }
+
+    #[test]
+    fn triple_dollar_in_recipe() {
+        let shell = MockShell {
+            exit_code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+            last_env: std::sync::Mutex::new(HashMap::new()),
+            last_script: std::sync::Mutex::new(String::new()),
+        };
+        let mut recipe = make_recipe();
+        recipe.script = "echo $$$prereq".into();
+        run(&recipe, &shell, &RecipeOptions::default()).unwrap();
+        let script = shell.last_script.lock().unwrap();
+        // $$$ → $$ (first $$ → $, plus trailing $)
+        assert_eq!(*script, "echo $$prereq", "$$$ should become $$");
+    }
+
+    #[test]
+    fn quad_dollar_in_recipe() {
+        let shell = MockShell {
+            exit_code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+            last_env: std::sync::Mutex::new(HashMap::new()),
+            last_script: std::sync::Mutex::new(String::new()),
+        };
+        let mut recipe = make_recipe();
+        recipe.script = "echo $$$$".into();
+        run(&recipe, &shell, &RecipeOptions::default()).unwrap();
+        let script = shell.last_script.lock().unwrap();
+        assert_eq!(*script, "echo $$", "$$$$ should become $$");
+    }
+
+    #[test]
+    fn no_dollar_recipe_unchanged() {
+        let shell = MockShell {
+            exit_code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+            last_env: std::sync::Mutex::new(HashMap::new()),
+            last_script: std::sync::Mutex::new(String::new()),
+        };
+        let mut recipe = make_recipe();
+        recipe.script = "echo hello world".into();
+        run(&recipe, &shell, &RecipeOptions::default()).unwrap();
+        let script = shell.last_script.lock().unwrap();
+        assert_eq!(*script, "echo hello world");
     }
 }

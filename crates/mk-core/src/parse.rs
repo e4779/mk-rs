@@ -292,6 +292,21 @@ fn parse_rule(
         *pos += 1;
     }
 
+    // Detect GNU Make $(...) syntax in prereqs and reject with clear error.
+    // mk has its own glob syntax (*.txt, dir/*.c) — $(wildcard ...) is not needed.
+    for prereq in &prereqs {
+        if prereq.contains("$(") {
+            return Err(ParseError::UnexpectedToken {
+                expected: "mk glob pattern (e.g., '*.txt' or 'dir/*.c')".into(),
+                got: format!(
+                    "GNU Make syntax $(...) in prereq '{}' is not supported",
+                    prereq
+                ),
+                line: start_line,
+            });
+        }
+    }
+
     // Consume trailing newline after header
     if *pos < tokens.len() && matches!(&tokens[*pos], Token::Newline) {
         *pos += 1;
@@ -739,6 +754,64 @@ mod tests {
         match &stmts[0] {
             Stmt::Rule(r) => {
                 assert_eq!(r.recipe, Some("let x=1".into()));
+            }
+            _ => panic!("expected Rule"),
+        }
+    }
+
+    // ── GNU Make syntax rejection tests ────────────────────────────────
+
+    #[test]
+    fn rejects_gnu_make_wildcard_syntax() {
+        let tokens = tokenize(
+            "target: $(wildcard /tmp/test/*.txt)\n\techo x\n",
+            ShellMode::Sh,
+        )
+        .unwrap();
+        let result = parse(&tokens);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("$(") || err.contains("$(wildcard"),
+            "error should mention $(...) syntax, got: {err}"
+        );
+    }
+
+    #[test]
+    fn rejects_dollar_paren_in_any_prereq() {
+        let tokens = tokenize(
+            "target: foo $(bar) baz\n\techo x\n",
+            ShellMode::Sh,
+        )
+        .unwrap();
+        let result = parse(&tokens);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("$("),
+            "error should mention $(...) syntax, got: {err}"
+        );
+    }
+
+    #[test]
+    fn allows_dollar_without_paren_in_prereq() {
+        // $@ or other single-char $ forms should not trigger the check
+        let stmts = parse_str("target: $prereq\n\techo x\n").unwrap();
+        match &stmts[0] {
+            Stmt::Rule(r) => {
+                assert_eq!(r.prereqs, vec!["$prereq"]);
+            }
+            _ => panic!("expected Rule"),
+        }
+    }
+
+    #[test]
+    fn allows_parentheses_without_dollar_in_prereq() {
+        // Archive member syntax like lib.a(foo.o) should still be valid
+        let stmts = parse_str("target: lib.a(foo.o)\n\techo x\n").unwrap();
+        match &stmts[0] {
+            Stmt::Rule(r) => {
+                assert_eq!(r.prereqs, vec!["lib.a(foo.o)"]);
             }
             _ => panic!("expected Rule"),
         }
