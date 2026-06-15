@@ -205,7 +205,7 @@ impl Shell for DuckShell {
         }
         // Load SDK commands (exec, cp, mv, mkdir, etc.)
         duckscriptsdk::load(&mut context.commands)
-            .map_err(|e| ShellError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+            .map_err(|e| ShellError::Io(std::io::Error::other(e.to_string())))?;
 
         // Set working directory
         std::env::set_current_dir(dir)
@@ -213,7 +213,7 @@ impl Shell for DuckShell {
 
         // Run script
         duckscript::runner::run_script(recipe, context, None)
-            .map_err(|e| ShellError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?;
+            .map_err(|e| ShellError::Io(std::io::Error::other(e.to_string())))?;
 
         Ok(ShellResult {
             exit_code: 0,

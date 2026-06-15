@@ -1,73 +1,101 @@
-# Bug report — from invest-research
+# Known bugs & resolved issues — mk-rust
 
-Found during frontier pipeline refactoring (2026-06-15).
-Reproduced with minimal test cases below.
+This file tracks bugs found in real-world use (e.g. the invest-research
+pipeline) and their resolution. For unimplemented spec features, see
+[`TRACEABILITY.md`](TRACEABILITY.md) (rows marked `◐` / `—`) — those are
+gaps by design, not bugs.
 
-## Bug 1: `$$` does NOT escape `$` in recipes
+## Current status (2026-06-15)
 
-**Expected:** `$$prereq` in mkfile recipe → `$prereq` in shell → expands to prereq list.
+| Gate | Status |
+|------|--------|
+| `cargo test` | ✅ 305 passing, 0 failed, 1 ignored |
+| `cargo clippy --all-targets --all-features -- -D warnings` | ✅ Clean |
+| `cargo build` | ✅ Clean |
 
-**Actual:** `$$prereq` → `1234prereq` in shell (PID + "prereq").
+**No active bugs.** Both entries below are resolved.
 
-**Reproduction:**
+---
+
+## Resolved
+
+### Bug 1: `$$` did NOT escape `$` in recipes — FIXED
+
+**Found:** 2026-06-15 (invest-research pipeline refactoring)
+
+**Expected:** `$$prereq` in a mkfile recipe → `$prereq` in shell → expands to
+the prereq list.
+
+**Actual (before fix):** `$$prereq` → `1234prereq` in shell (PID + "prereq") —
+`$$` was passed verbatim to `sh -c`, which expands it to the process ID.
+
+**Reproduction (historical):**
 ```makefile
 # mkfile
 test1: prereq.txt
 	echo $$prereq should be "prereq.txt", got: $prereq
 ```
-```bash
-echo data > prereq.txt && mk test1
-# Output: "1230953prereq should be prereq.txt, got: prereq.txt"
-#          ^^^^^^^^ PID + "prereq" — $$ not converted to $
-```
 
-**Impact:** Cannot use `$1`, `$2`, etc. in recipes (e.g. `set -- $prereq; echo $1`). The workaround is to use `$1` directly (without `$$`), but this relies on mk NOT interpreting `$1` as a variable — which happens to work but feels fragile.
+**Root cause:** Recipe text was passed verbatim to `sh -c`. `$$` was not
+converted to `$` during recipe processing.
 
-**Root cause:** Recipe text is passed verbatim to `sh -c`. `$$` is not converted to `$` during recipe processing in `mk-core/src/recipe.rs` or the parser.
+**Fix:** [`escape_dollar_dollar`](crates/mk-core/src/recipe.rs) now runs on
+every recipe script before handing it to the shell (recipe.rs:113). Converts
+`$$` → `$` pairwise, left-to-right (`$$$` → `$$`, `$$$$` → `$$`).
+
+**Commit:** [`a9208b3`](https://) `fix: $ escape in recipes + reject GNU Make syntax in prereqs`
+
+**Tests:** `dollar_dollar_escape_in_recipe`, `dollar_dollar_at_end_of_recipe`,
+`triple_dollar_in_recipe`, `quad_dollar_in_recipe` (recipe.rs).
+
+**Impact of the workaround note:** The previous workaround ("use `$1` directly
+without `$$`") is no longer needed — `$$` now escapes correctly, so
+`set -- $prereq; echo $1` works as written in the mkfile.
 
 ---
 
-## Bug 2: `$(wildcard ...)` in prereqs causes perpetual staleness
+### Bug 2: `$(wildcard ...)` in prereqs caused perpetual staleness — FIXED
 
-**Expected:** Target not rebuilt when wildcard-matched files haven't changed.
+**Found:** 2026-06-15 (invest-research pipeline refactoring)
 
-**Actual:** Target is ALWAYS considered stale and rebuilt every time.
+**Expected:** A target using wildcard-matched prereqs is not rebuilt when the
+matched files haven't changed.
 
-**Reproduction:**
+**Actual (before fix):** The target was ALWAYS considered stale and rebuilt
+every run. Additionally, `wildcard: command not find` appeared during parsing —
+`$(...)` was passed through to the shell as command substitution.
+
+**Reproduction (historical):**
 ```makefile
 # mkfile
 wildcard-test: prereq.txt $(wildcard /tmp/test/*.txt)
 	touch $target
 ```
-```bash
-mkdir -p /tmp/test
-echo data > /tmp/test/a.txt
-echo data > prereq.txt
-mk wildcard-test      # builds
-mk wildcard-test      # should SKIP, but BUILDS AGAIN
-mk wildcard-test      # BUILDS AGAIN (infinite)
-```
+`mk wildcard-test` built repeatedly instead of skipping.
 
-**Without wildcard** — caching works correctly:
-```makefile
-no-wildcard: prereq.txt /tmp/test/a.txt
-	touch $target
-```
-```bash
-mk no-wildcard         # builds
-mk no-wildcard         # SKIPS ✓
-```
+**Root cause:** `$(...)` is GNU Make syntax. mk has no such function — it uses
+native glob patterns (`*.txt`, `dir/*.c`) in prereqs, expanded at graph-build
+time. The `$(...)` form was not handled, so it leaked to the shell.
 
-**Additional symptom:** Bash error `wildcard: command not found` when mkfile is first parsed, suggesting `$(wildcard ...)` is being interpreted by the SHELL as command substitution rather than by mk.
+**Fix:** The parser now [rejects `$(...)` in prereqs](crates/mk-core/src/parse.rs)
+with a clear error pointing the user at mk's glob syntax (parse.rs:295-307):
 
-**Impact:** Cannot use wildcard expansion in prereqs. Workaround: list files explicitly or use a sentinel (e.g. `data/bars/.done`).
+> `GNU Make syntax $(...) in prereq '...' is not supported`
 
-**Root cause (hypothesis):** `$(...)` syntax is not handled by mk's variable expansion — it passes through to the shell which tries to execute `wildcard` as a command.
+Replace `$(wildcard /tmp/test/*.txt)` with just `/tmp/test/*.txt`.
+
+**Commit:** [`a9208b3`](https://) `fix: $ escape in recipes + reject GNU Make syntax in prereqs`
+
+**Tests:** `rejects_gnu_make_wildcard_syntax`,
+`rejects_dollar_paren_in_any_prereq`, `allows_dollar_without_paren_in_prereq`,
+`allows_parentheses_without_dollar_in_prereq` (parse.rs). The last two confirm
+the check is narrow — it does not reject legitimate `$VAR` refs or literal
+parentheses.
 
 ---
 
 ## Environment
 
-- mk-rust built from `~/dev/mk-rust/` (commit 801cb37 or later)
+- mk-rust built from `~/dev/mk-rust/` (HEAD `71a2e76` or later)
 - Default shell: `/bin/sh`
 - OS: Linux

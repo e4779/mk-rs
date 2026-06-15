@@ -1313,7 +1313,7 @@ mod tests {
         std::fs::write(&c_file, "int main(){}").unwrap();
         let o_file = dir.join("real.o");
         std::fs::write(&o_file, "object").unwrap();
-        let input = format!("(.+)\\.o:Rn: \\1.c\n");
+        let input = "(.+)\\.o:Rn: \\1.c\n".to_string();
         let g = graph_from_str(&input, &[&o_file.to_string_lossy()]).unwrap();
         assert!(g.nodes.len() >= 2);
         let _ = std::fs::remove_dir_all(&dir);
