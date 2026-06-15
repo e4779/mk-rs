@@ -478,17 +478,18 @@ fn run_parallel(
                                             }
                                             Err(e) => {
                                                 let msg = e.to_string();
+                                                failed
+                                                    .lock()
+                                                    .unwrap()
+                                                    .push((name.clone(), msg));
                                                 if opts.keep_going {
-                                                    failed
-                                                        .lock()
-                                                        .unwrap()
-                                                        .push((name.clone(), msg));
+                                                    // -k: mark dependents as failed too
                                                     false
+                                                } else if rule.attributes.is_exclusive() {
+                                                    // E attribute: continue as if success
+                                                    // for dependent propagation
+                                                    true
                                                 } else {
-                                                    failed
-                                                        .lock()
-                                                        .unwrap()
-                                                        .push((name.clone(), msg));
                                                     cancelled.store(true, Ordering::SeqCst);
                                                     return;
                                                 }
@@ -1129,5 +1130,62 @@ mod tests {
         ).unwrap();
         assert!(outcome.built.contains(&"x".to_string()), "x should be built");
         assert!(outcome.built.contains(&"y".to_string()), "y should be built");
+    }
+
+    #[test]
+    fn parallel_e_attribute_continues_on_failure() {
+        // b has :E: attribute and fails, but a should still build
+        // because E means "continue even if this recipe fails"
+        let mkfile = "all:V: a b\na:\n\techo a\nb:E:\n\texit 1\n";
+        let (mut graph, rules) = build_from_mkfile(mkfile, "all");
+        let shell = TestShell;
+        let opts = SchedOptions {
+            nproc: 2,
+            ..Default::default()
+        };
+        let outcome = execute(
+            &mut graph,
+            &rules,
+            &shell,
+            &PathBuf::from("."),
+            &HashMap::new(),
+            &opts,
+        )
+        .unwrap();
+        // a should still build despite b's failure (E attribute)
+        assert!(outcome.built.contains(&"a".to_string()), "a should build despite b's E failure");
+        // b should be in the failed list
+        assert!(outcome.failed.iter().any(|(t, _)| t == "b"), "b should be in failed list");
+    }
+
+    #[test]
+    fn parallel_e_attribute_dependents_not_marked_failed() {
+        // b has :E: and fails, c depends on b. With E, c should still try to build
+        // (unlike keep_going which would mark c as failed).
+        let mkfile = "all:V: a c\na:\n\techo a\nc: b\n\techo c\nb:E:\n\texit 1\n";
+        let (mut graph, rules) = build_from_mkfile(mkfile, "all");
+        let shell = TestShell;
+        let opts = SchedOptions {
+            nproc: 2,
+            ..Default::default()
+        };
+        let outcome = execute(
+            &mut graph,
+            &rules,
+            &shell,
+            &PathBuf::from("."),
+            &HashMap::new(),
+            &opts,
+        )
+        .unwrap();
+        // a should build
+        assert!(outcome.built.contains(&"a".to_string()), "a should build");
+        // c should try to build (dependent of b not marked as failed)
+        assert!(
+            outcome.built.contains(&"c".to_string()),
+            "c should build (dependent of E-attributed target should not be marked failed)"
+        );
+        // b should be in the failed list
+        assert!(outcome.failed.iter().any(|(t, _)| t == "b"), "b should be in failed list");
     }
 }

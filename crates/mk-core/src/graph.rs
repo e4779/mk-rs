@@ -407,6 +407,12 @@ pub fn build_graph_with_nrep(
             // Try regex metarules (R: prefix)
             if !matched {
                 for regex_rule in regex_rules {
+                    // F-027: n attribute — skip metarule if target doesn't exist on fs
+                    if regex_rule.attributes.is_no_virtual()
+                        && !std::path::Path::new(name).exists()
+                    {
+                        continue;
+                    }
                     let pattern = &regex_rule.targets[0];
                     if let Ok(re) = Regex::new(pattern) {
                         if let Some(caps) = re.captures(name) {
@@ -1280,6 +1286,34 @@ mod tests {
         // Create real.o so n: metarule applies
         std::fs::write(&o_file, "object").unwrap();
         let input = "%.o:n: %.c\n".to_string();
+        let g = graph_from_str(&input, &[&o_file.to_string_lossy()]).unwrap();
+        assert!(g.nodes.len() >= 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn n_attribute_regex_skips_nonexistent() {
+        // regex metarule with :n: should NOT match non-existent file.
+        // ghost.o doesn't exist on fs, so the n: regex metarule is skipped.
+        let input = "(.+)\\.o:Rn: \\1.c\nprog: ghost.o\n";
+        let g = graph_from_str(input, &["prog"]).unwrap();
+        let ghost = g.nodes.iter().find(|n| n.name == "ghost.o").unwrap();
+        assert!(
+            ghost.arcs_in.is_empty(),
+            "n: regex metarule should be skipped for non-existent ghost.o"
+        );
+    }
+
+    #[test]
+    fn n_attribute_regex_allows_existing() {
+        // regex metarule with :n: SHOULD match an existing file
+        let dir = std::env::temp_dir().join("mk_test_n_regex");
+        let _ = std::fs::create_dir_all(&dir);
+        let c_file = dir.join("real.c");
+        std::fs::write(&c_file, "int main(){}").unwrap();
+        let o_file = dir.join("real.o");
+        std::fs::write(&o_file, "object").unwrap();
+        let input = format!("(.+)\\.o:Rn: \\1.c\n");
         let g = graph_from_str(&input, &[&o_file.to_string_lossy()]).unwrap();
         assert!(g.nodes.len() >= 2);
         let _ = std::fs::remove_dir_all(&dir);
