@@ -18,5 +18,6 @@ Explore the project: `ls`, `cargo test`, `cat Cargo.toml`. Read README.md for fe
 - `MKSHELL` splits on whitespace: first token is binary, rest are flags. `MKSHELL=node -e` → `node -e "recipe"`.
 - `=` and `:` inside recipe text are NOT split by the lexer (`in_recipe` flag). Recipe lines after TAB are opaque.
 - Virtual targets must be explicit (`:V:`) — the graph builder doesn't auto-mark orphan prereqs as virtual.
+- `:V:` (and `:Q:`, `:N:`, etc.) are RULE ATTRIBUTES, not part of the target name. When referencing a virtual target as a prereq, use just the name: `run: build` (not `run: build:V:`). The parser greedily interprets `Word:` after a target header as attributes — `build:V:` as a prereq gets parsed as target `build` with bogus attribute chars `V`.
 - Glob expansion (`*.toon`) happens at graph-build time, not at recipe execution time.
 - `cargo publish` creates a tarball without `.git`. build.rs reads `GIT_HASH` file first, falls back to `git rev-parse`. CI creates `crates/mk-cli/GIT_HASH` before publish.

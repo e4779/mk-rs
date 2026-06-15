@@ -49,6 +49,11 @@ prog: main.o util.o
 	$CC $CFLAGS -c $stem.c
 
 all:V: prog
+
+# Note: :V: (and :Q:, :N:, etc.) are rule attributes, not name suffixes.
+# When referencing a virtual target as a prereq, use just the name:
+run: all        # ✅ correct
+run: all:V:     # ❌ parser sees "all" as bogus attributes, not a prereq
 ```
 
 ### Run mk

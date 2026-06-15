@@ -1,0 +1,53 @@
+{
+  "nextId": 5,
+  "tasks": [
+    {
+      "id": "1",
+      "subject": "Fix Bug 1: check_stale short-circuits on first stale prereq",
+      "description": "Replace any() with full traversal loop in crates/mk-core/src/graph.rs around line 661. Add test with 2 file prereqs where both are independently stale.",
+      "status": "completed",
+      "activeForm": "Fixing check_stale short-circuit bug",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1781523531664,
+      "updatedAt": 1781523611228
+    },
+    {
+      "id": "2",
+      "subject": "Fix Gap 2: N (NO_EXEC) attribute not enforced in recipe run",
+      "description": "In crates/mk-core/src/recipe.rs run(), add check for is_no_exec() after quiet check and before -n/-e/-t checks. Print recipe (unless quiet), return Ok with exit_code 0. Add test.",
+      "status": "completed",
+      "activeForm": "Fixing NO_EXEC attribute enforcement",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1781523535070,
+      "updatedAt": 1781523632242
+    },
+    {
+      "id": "3",
+      "subject": "Fix Gap 3: Duplicate failed entries in keep_going path",
+      "description": "In crates/mk-core/src/sched.rs around line 512, check if rem.remove() actually removed something before pushing to failed.",
+      "status": "completed",
+      "activeForm": "Fixing duplicate failed entries in keep_going path",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1781523537949,
+      "updatedAt": 1781523642046
+    },
+    {
+      "id": "4",
+      "subject": "Fix Gap 4: NREP=0 edge case",
+      "description": "Add .max(1) when reading NREP from scope in crates/mk-cli/src/main.rs.",
+      "status": "completed",
+      "activeForm": "Adding NREP=0 guard",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1781523540634,
+      "updatedAt": 1781523699963
+    }
+  ]
+}

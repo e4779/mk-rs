@@ -663,11 +663,15 @@ fn check_stale(
 
     let eff_mtime = effective_mtime(graph, idx, force_intermediates);
 
-    // Any stale prerequisite makes us stale
-    let prereq_stale = node.arcs_in.iter().any(|&arc_idx| {
-        let prereq_idx = graph.arcs[arc_idx.0].from;
-        check_stale(graph, prereq_idx, memo, result, in_result, force_intermediates)
-    });
+    // Any stale prerequisite makes us stale.
+    // Visit ALL prereqs — don't short-circuit, so all stale prereqs are
+    // added to `result` and memoized (not just the first stale one).
+    let mut prereq_stale = false;
+    for &arc_idx in &node.arcs_in {
+        if check_stale(graph, graph.arcs[arc_idx.0].from, memo, result, in_result, force_intermediates) {
+            prereq_stale = true;
+        }
+    }
 
     let stale = if node.flags.is_virtual() {
         // Virtual: stale if any prereq is stale, OR if no prereqs (always run)
@@ -934,6 +938,59 @@ mod tests {
         let g = graph_from_str(&input, &[&target_path.to_string_lossy()]).unwrap();
         let stale = stale_nodes(&g, false);
         assert!(!stale.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// When a target has 2 file prereqs and both are independently stale,
+    /// check_stale must visit ALL prereqs and add them all to the stale set.
+    /// The old `any()` short-circuit would miss the second stale prereq.
+    #[test]
+    fn stale_two_independent_prereqs_both_stale() {
+        let dir = std::env::temp_dir().join("mk_test_two_stale");
+        let _ = std::fs::create_dir_all(&dir);
+        let target_path = dir.join("target.txt");
+        let a_path = dir.join("a");
+        let b_path = dir.join("b");
+        let c_path = dir.join("c");
+        let d_path = dir.join("d");
+
+        // Write prereqs a and b first (older)
+        std::fs::write(&a_path, "a-old").unwrap();
+        std::fs::write(&b_path, "b-old").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        // Write c and d newer — makes a and b stale
+        std::fs::write(&c_path, "c-new").unwrap();
+        std::fs::write(&d_path, "d-new").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        // target exists and is even newer than a and b
+        std::fs::write(&target_path, "target").unwrap();
+
+        let input = format!(
+            "{}: {} {}\n{}: {}\n{}: {}\n",
+            target_path.display(), a_path.display(), b_path.display(),
+            a_path.display(), c_path.display(),
+            b_path.display(), d_path.display(),
+        );
+        let g = graph_from_str(&input, &[&target_path.to_string_lossy()]).unwrap();
+        let stale = stale_nodes(&g, false);
+
+        // Both a and b should be in the stale set.
+        let names: Vec<&str> = stale.iter().map(|idx| g.nodes[idx.0].name.as_str()).collect();
+        assert!(
+            names.contains(&a_path.to_str().unwrap()),
+            "a should be stale (c is newer); stale set: {:?}", names
+        );
+        assert!(
+            names.contains(&b_path.to_str().unwrap()),
+            "b should be stale (d is newer); stale set: {:?}", names
+        );
+
+        // target should also be stale since prereqs are stale.
+        assert!(
+            names.contains(&target_path.to_str().unwrap()),
+            "target should be stale (a and b are stale); stale set: {:?}", names
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1222,7 +1279,7 @@ mod tests {
         let o_file = dir.join("real.o");
         // Create real.o so n: metarule applies
         std::fs::write(&o_file, "object").unwrap();
-        let input = format!("%.o:n: %.c\n", );
+        let input = "%.o:n: %.c\n".to_string();
         let g = graph_from_str(&input, &[&o_file.to_string_lossy()]).unwrap();
         assert!(g.nodes.len() >= 2);
         let _ = std::fs::remove_dir_all(&dir);

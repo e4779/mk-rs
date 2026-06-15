@@ -130,6 +130,17 @@ pub fn run(
         }
     }
 
+    // ── N attribute: no-exec ──────────────────────────────────────────
+    // The N attribute means "treat target as updated without running the recipe".
+    // The recipe is still printed (unless quiet), then we return success.
+    if recipe.attributes.is_no_exec() {
+        return Ok(ShellResult {
+            exit_code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+        });
+    }
+
     // ── -n: no-exec ────────────────────────────────────────────────────
     if opts.no_exec {
         return Ok(ShellResult {
@@ -433,6 +444,54 @@ mod tests {
         assert_eq!(result.exit_code, 0);
         assert!(result.stdout.is_empty());
         assert!(result.stderr.is_empty());
+    }
+
+    // ── N (NO_EXEC) attribute tests ────────────────────────────────────
+
+    #[test]
+    fn run_n_attribute_skips_execution() {
+        // N attribute: recipe should NOT execute, but succeed anyway.
+        // The shell would fail (exit 1), but the N attribute prevents execution.
+        let shell = MockShell {
+            exit_code: 1, // would fail if executed
+            stdout: String::new(),
+            stderr: "should not run".into(),
+            last_env: std::sync::Mutex::new(HashMap::new()),
+            last_script: std::sync::Mutex::new(String::new()),
+        };
+        let mut recipe = make_recipe();
+        recipe.attributes = Attributes::default().with(Attributes::NO_EXEC);
+        recipe.script = "\texit 1\n".into();
+
+        let result = run(&recipe, &shell, &RecipeOptions::default()).unwrap();
+        assert_eq!(result.exit_code, 0);
+        assert!(result.stdout.is_empty());
+        assert!(result.stderr.is_empty());
+        // Verify the shell was NOT called.
+        assert!(shell.last_script.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn run_n_attribute_with_explain() {
+        // N + -e: should still skip execution.
+        let shell = MockShell {
+            exit_code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+            last_env: std::sync::Mutex::new(HashMap::new()),
+            last_script: std::sync::Mutex::new(String::new()),
+        };
+        let mut recipe = make_recipe();
+        recipe.attributes = Attributes::default().with(Attributes::NO_EXEC);
+
+        let opts = RecipeOptions {
+            explain: true,
+            ..Default::default()
+        };
+        let result = run(&recipe, &shell, &opts).unwrap();
+        assert_eq!(result.exit_code, 0);
+        // Shell should not be called even with -e.
+        assert!(shell.last_script.lock().unwrap().is_empty());
     }
 
     // ── -t (touch) tests ───────────────────────────────────────────────

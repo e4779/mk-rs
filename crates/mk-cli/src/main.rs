@@ -205,10 +205,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     // Read $NREP from the variable scope (default "1" via builtin_scope).
     // F-056: NREP limits metarule recursion depth.
+    // Guard against NREP=0 (no expansion) — mk convention: NREP >= 1.
     let nrep = scope
         .get("NREP")
         .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(1);
+        .unwrap_or(1)
+        .max(1);
 
     // Build DAG
     let mut graph = build_graph_with_nrep(&stmts, &target_names, nrep)?;

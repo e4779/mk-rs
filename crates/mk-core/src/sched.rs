@@ -508,14 +508,17 @@ fn run_parallel(
                     // On failure: if keep_going, mark dependents as failed too
                     // and unblock them. Without keep_going, cancelled was already set.
                     if !success {
-                        // Mark all dependents as failed (their prereq failed)
+                        // Mark all dependents as failed (their prereq failed).
+                        // Only push to failed if the dependent was still in `remaining` —
+                        // avoids duplicates when a node has multiple failed prereqs.
                         if let Some(deps) = dependents_ref.get(&node_idx.0) {
                             let mut f = failed.lock().unwrap();
                             let mut rem = remaining.lock().unwrap();
                             for &dep_idx in deps {
                                 let dep_name = graph_ref.nodes[dep_idx.0].name.clone();
-                                f.push((dep_name.clone(), format!("prerequisite '{}' failed", name)));
-                                rem.remove(&dep_idx.0);
+                                if rem.remove(&dep_idx.0).is_some() {
+                                    f.push((dep_name, format!("prerequisite '{}' failed", name)));
+                                }
                             }
                         }
                         continue;
