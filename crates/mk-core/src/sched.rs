@@ -88,6 +88,10 @@ impl Default for SchedOptions {
 pub struct ResolvedRule {
     pub recipe: String,
     pub attributes: Attributes,
+    /// All targets of the originating rule (for `$alltarget`).
+    /// For single-target rules this is a one-element list; for multi-target
+    /// rules (`a b: c d`) it holds every target on the left-hand side.
+    pub all_targets: Vec<String>,
 }
 
 // ── Topological sort ───────────────────────────────────────────────────────
@@ -168,7 +172,7 @@ fn build_recipe(
         env: env.clone(),
         attributes: rule.attributes,
         stem,
-        all_targets: vec![node.name.clone()],
+        all_targets: rule.all_targets.clone(),
     }
 }
 
@@ -630,6 +634,7 @@ mod tests {
                         ResolvedRule {
                             recipe: r.recipe.clone().unwrap_or_default(),
                             attributes: r.attributes,
+                            all_targets: r.targets.clone(),
                         },
                     );
                 }
@@ -798,6 +803,48 @@ mod tests {
         assert_eq!(recipe.target, "target");
         assert_eq!(recipe.prereqs, vec!["a", "b"]);
         assert_eq!(recipe.script, "echo build");
+    }
+
+    #[test]
+    fn build_recipe_all_targets_single() {
+        // Single-target rule: $alltarget should contain just that target.
+        let mkfile = "target: a\n\techo build\n";
+        let (graph, rules) = build_from_mkfile(mkfile, "target");
+        let target_idx = graph.targets.first().copied().unwrap();
+        let rule = rules.get("target").unwrap();
+        let recipe = build_recipe(
+            &graph,
+            target_idx,
+            rule,
+            &PathBuf::from("."),
+            &HashMap::new(),
+        );
+        assert_eq!(recipe.all_targets, vec!["target"]);
+    }
+
+    #[test]
+    fn build_recipe_all_targets_multi() {
+        // Multi-target rule (a b: c d): $alltarget must contain every target
+        // on the left-hand side, regardless of which target is being built.
+        let mkfile = "a b: c d\n\techo build\n";
+        let (graph, rules) = build_from_mkfile(mkfile, "a");
+        // Find the node for target "a".
+        let a_idx = graph
+            .nodes
+            .iter()
+            .position(|n| n.name == "a")
+            .map(NodeIndex)
+            .unwrap();
+        let rule = rules.get("a").unwrap();
+        let recipe = build_recipe(
+            &graph,
+            a_idx,
+            rule,
+            &PathBuf::from("."),
+            &HashMap::new(),
+        );
+        assert_eq!(recipe.target, "a");
+        assert_eq!(recipe.all_targets, vec!["a", "b"]);
     }
 
     // ── topological_sort() edge cases ──────────────────────────────────

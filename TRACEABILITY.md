@@ -24,7 +24,7 @@
 | F-014 | First target as default | `graph`, `cli` | 1a | ✓ |
 | F-045 | Rule header evaluated at parse time | `parse`, `var` | 1a | ✓ |
 | F-063 | Backquote command substitution in mkfile | `lex`, `var` | 1b | ◐ (lex done) |
-| F-066 | Glob expansion in prerequisites | `graph` | 3 | ✓ |
+| F-066 | Glob expansion in prerequisites | `graph` | 3 | ◐ (expands, test name misleading) |
 | F-067 | `-f mkfile` flag | `cli` | 1a | — |
 
 ## Variables
@@ -49,7 +49,7 @@
 | F-019 | Regular rule overrides metarule | `graph` | 2 | ✓ |
 | F-029 | `R:` regex metarules | `parse`, `graph` | 2 | ✓ |
 | F-044 | `&` metarule (limited match) | `parse`, `graph` | 2 | ✓ |
-| F-056 | `$NREP` variable | `var`, `graph` | 2 | — |
+| F-056 | `$NREP` variable | `var`, `graph` | 2 | ◐ (builtin + `build_graph_with_nrep` exist; CLI hardcodes 1) |
 
 ## Graph & DAG
 
@@ -60,7 +60,7 @@
 | F-017 | Missing intermediate targets | `graph` | 1b | ✓ |
 | F-018 | Multiple rules for same target (prereq merging) | `parse`, `graph` | 1a | ◐ (parse done) |
 | F-059 | Cycle detection and rejection | `graph` | 1a | ✓ |
-| F-060 | Pruning irrelevant subgraphs | `graph` | 2 | — |
+| F-060 | Pruning irrelevant subgraphs | `graph` | 2 | ◐ (`prune_vacuous` drops meta arcs; unreachable subgraphs not pruned) |
 | F-061 | Uniqueness of derivation | `graph` | 2 | — |
 | F-062 | Longest-path-first execution order | `graph`, `sched` | 1b | ◐ (sched done) |
 | F-065 | Identical rule headers override | `parse` | 1a | ✓ |
@@ -115,7 +115,7 @@
 | F-047 | `-t` flag (touch) | `cli`, `sched` | 1b | ✓ |
 | F-048 | `-w` flag (what-if) | `cli`, `graph` | 2 | — |
 | F-049 | `-a` flag (always make) | `cli`, `graph` | 1b | ✓ |
-| F-050 | `-d[egp]` debugging | `cli` | 3 | ✓ |
+| F-050 | `-d[egp]` debugging | `cli` | 3 | ◐ (stub: prints messages, no behavior) |
 | F-051 | `-i` flag (force intermediates) | `cli`, `graph` | 1b | ✓ |
 
 ## Aggregates

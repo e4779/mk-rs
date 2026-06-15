@@ -1,0 +1,17 @@
+{
+  "nextId": 2,
+  "tasks": [
+    {
+      "id": "1",
+      "subject": "Review mk-rust codebase for bugs, gaps, coverage",
+      "description": "Comprehensive code review of mk-rust (Plan 9 mk port to Rust). Check spec compliance, bugs, missing tests, error handling gaps, documentation gaps, and performance issues. Write findings to docs/review-2026-06-15.md. No code changes.",
+      "status": "completed",
+      "activeForm": "Reviewing mk-rust codebase",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1781521374268,
+      "updatedAt": 1781521587397
+    }
+  ]
+}

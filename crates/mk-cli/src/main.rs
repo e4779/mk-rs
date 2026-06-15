@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-use mk_rs_core::graph::build_graph;
+use mk_rs_core::graph::build_graph_with_nrep;
 use mk_rs_core::lex::{tokenize, ShellMode};
 use mk_rs_core::parse::Stmt;
 use mk_rs_core::sched::{execute, ResolvedRule, SchedOptions};
@@ -166,6 +166,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     ResolvedRule {
                         recipe: r.recipe.clone().unwrap_or_default(),
                         attributes: r.attributes,
+                        all_targets: r.targets.clone(),
                     },
                 );
             }
@@ -202,8 +203,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         cli.targets.clone()
     };
 
+    // Read $NREP from the variable scope (default "1" via builtin_scope).
+    // F-056: NREP limits metarule recursion depth.
+    let nrep = scope
+        .get("NREP")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(1);
+
     // Build DAG
-    let mut graph = build_graph(&stmts, &target_names)?;
+    let mut graph = build_graph_with_nrep(&stmts, &target_names, nrep)?;
 
     // --graph / --graph-of: output DOT and exit
     if cli.graph || cli.graph_of.is_some() {
@@ -228,10 +236,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     if r.is_metarule && !r.is_regex {
                         for pat in &r.targets {
                             if !pat.contains('%') && !pat.contains('&') { continue; }
-                            if let Some(_) = match_simple(&node.name, pat) {
+                            if match_simple(&node.name, pat).is_some() {
                                 rules.insert(node.name.clone(), ResolvedRule {
                                     recipe: r.recipe.clone().unwrap_or_default(),
                                     attributes: r.attributes,
+                                    all_targets: r.targets.clone(),
                                 });
                             }
                         }
@@ -249,9 +258,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         if mkshell.contains("duckscript") || mkshell.ends_with(".ds") {
             #[cfg(not(feature = "duckscript"))]
             {
-                return Err(format!(
-                    "mk: duckscript support not compiled in (rebuild with --features duckscript)"
-                ).into());
+                return Err("mk: duckscript support not compiled in (rebuild with --features duckscript)".to_string().into());
             }
             #[cfg(feature = "duckscript")]
             {

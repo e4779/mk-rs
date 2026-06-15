@@ -5,7 +5,7 @@ use std::process::Command;
 
 fn main() {
     let hash = read_hash_file()
-        .or_else(|| git_short())
+        .or_else(git_short)
         .unwrap_or_else(|| "unknown".into());
 
     println!("cargo:rustc-env=GIT_HASH={hash}");

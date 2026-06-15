@@ -695,10 +695,7 @@ fn check_stale(
                         .arg("-c")
                         .arg(format!("{} '{}' '{}'", prog, target, prereq))
                         .status();
-                    return match status {
-                        Ok(s) if s.success() => false,
-                        _ => true,
-                    };
+                    return !matches!(status, Ok(s) if s.success());
                 }
 
                 let prereq_eff = effective_mtime(graph, prereq_idx, force_intermediates);
@@ -773,7 +770,7 @@ impl Graph {
         out.push('\n');
 
         // Write edges (only between included nodes)
-        for (_i, arc) in self.arcs.iter().enumerate() {
+        for arc in self.arcs.iter() {
             if !included.contains(&arc.from) || !included.contains(&arc.to) {
                 continue;
             }
@@ -784,8 +781,8 @@ impl Graph {
             if arc.is_meta {
                 attrs.push("meta".into());
             }
-            if arc.prog.is_some() {
-                attrs.push(format!("P:{}", arc.prog.as_ref().unwrap()));
+            if let Some(prog) = &arc.prog {
+                attrs.push(format!("P:{}", prog));
             }
             if !arc.stem.is_empty() {
                 attrs.push(format!("stem={}", arc.stem));
@@ -801,11 +798,6 @@ impl Graph {
         out.push_str("}\n");
         out
     }
-
-    /// Export the dependency graph as JSON.
-    ///
-    /// Each node has `id`, `kind` ("file" or "virtual"), and `stage`
-    /// (heuristic: "raw", "processed", "report", or "virtual").
 
     /// Collect all nodes reachable from `start` via outgoing edges.
     fn reachable_from(&self, start: NodeIndex) -> std::collections::HashSet<NodeIndex> {
@@ -1587,10 +1579,9 @@ mod tests {
     }
 
     #[test]
-    fn glob_prereqs_not_expanded_yet() {
-        // F-066: glob expansion in prerequisites not yet implemented.
+    fn glob_expands_prereqs() {
+        // F-066: glob expansion in prerequisites.
         // `target: data/*.json` should match all .json files in data/.
-        // Currently `*.json` is treated as a literal filename.
         let dir = std::env::temp_dir().join("mk_test_glob");
         let _ = std::fs::create_dir_all(&dir);
         std::fs::write(dir.join("a.json"), "").unwrap();
@@ -1600,7 +1591,7 @@ mod tests {
         let input = format!("target: {}\n", dir.join("*.json").display());
         let g = graph_from_str(&input, &["target"]).unwrap();
 
-        // BUG: *.json is not expanded — target has one prereq named "*.json"
+        // *.json expands to a.json and b.json, not c.txt or literal *.json
         let prereqs: Vec<&str> = g.nodes.iter()
             .filter(|n| n.name == "target")
             .flat_map(|n| n.arcs_in.iter())
