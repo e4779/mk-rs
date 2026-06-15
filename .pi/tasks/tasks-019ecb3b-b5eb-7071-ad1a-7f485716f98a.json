@@ -1,0 +1,29 @@
+{
+  "nextId": 3,
+  "tasks": [
+    {
+      "id": "1",
+      "subject": "Fix Bug 11: n attribute ignored for regex (R:) metarules (graph.rs)",
+      "description": "In graph.rs, the regex metarule matching loop doesn't check for the n (non-virtual) attribute. Add the check mirroring what % / & metarules do: if the metarule has NO_VIRTUAL attribute and the target file doesn't exist on fs, skip the match.",
+      "status": "completed",
+      "activeForm": "Fixing n attribute for regex metarules",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1781526203780,
+      "updatedAt": 1781526262706
+    },
+    {
+      "id": "2",
+      "subject": "Fix Bug 12: E attribute not enforced in parallel scheduler (sched.rs)",
+      "description": "In the parallel worker loop in run_parallel(), when a recipe fails, check if the rule has the E (EXCLUSIVE) attribute. If yes, log failure but don't set cancelled and don't mark dependents as failed — treat it like keep_going for just this one target.",
+      "status": "completed",
+      "activeForm": "Fixing E attribute in parallel scheduler",
+      "metadata": {},
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1781526203781,
+      "updatedAt": 1781526311556
+    }
+  ]
+}

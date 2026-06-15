@@ -1,0 +1,31 @@
+{
+  "nextId": 3,
+  "tasks": [
+    {
+      "id": "1",
+      "subject": "Fix Bug #1: < and | in recipe text produce wrong tokens (lex.rs)",
+      "description": "Add !self.in_recipe guard to the match arms for '<' and '|' in lex.rs so they are treated as regular Word characters inside recipe text.",
+      "status": "completed",
+      "metadata": {
+        "agentType": "rust-coder"
+      },
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1781526166269,
+      "updatedAt": 1781526210110
+    },
+    {
+      "id": "2",
+      "subject": "Fix Bug #2: Diamond includes cause duplicate rules (include.rs)",
+      "description": "Add a HashSet<PathBuf> to IncludeContext that tracks all files already parsed (not just the current include chain). Before parsing an included file, check if it's already been parsed — skip if so. Add tests for diamond include scenarios.",
+      "status": "completed",
+      "metadata": {
+        "agentType": "rust-coder"
+      },
+      "blocks": [],
+      "blockedBy": [],
+      "createdAt": 1781526169602,
+      "updatedAt": 1781526285577
+    }
+  ]
+}
