@@ -1352,7 +1352,7 @@ Based on toonq v0.2.4 release experience:
 - [x] crates.io token in GitVerse secrets (`CARGO_REGISTRY_TOKEN`)
 - [x] `git tag v0.1.0` + push tag triggers publish
 - [x] GitHub mirror: push to `git@github.com:e4779/mk-rs.git`
-- [x] README: install instructions, quick start, --graph, --json, links
+- [x] README: install instructions, quick start, mk-graph (DOT/JSON), links
 - [x] CHANGELOG.md or release notes
 - [x] Man page (`docs/mk.1.md`) complete
 - [x] License (MIT) in Cargo.toml + LICENSE file

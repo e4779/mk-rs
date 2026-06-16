@@ -216,18 +216,24 @@ See [`PLAN.md`](PLAN.md) for the project vision, design decisions, and future pl
 
 ## Dependency graph
 
+The `mk-graph` companion binary (installed alongside `mk`) visualizes the
+dependency graph. It keeps `mk` itself focused on building.
+
 ```bash
 # Show entire graph in DOT format
-mk --graph
+mk-graph
 
 # Show subgraph reachable from a specific target
-mk --graph-of data/processed/result.json
+mk-graph --target data/processed/result.json
 
 # Render to SVG
-mk --graph | dot -Tsvg > graph.svg
+mk-graph | dot -Tsvg > graph.svg
 
-# Render to ASCII for terminal viewing
-mk -f mkfile --graph-of test | dot -Tascii
+# JSON export (for programmatic inspection)
+mk-graph --json
+
+# Check for dead-end targets and orphan prerequisites
+mk-graph --check
 ```
 
 Edge labels show the mkfile line number where the rule is defined.

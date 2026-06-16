@@ -758,7 +758,7 @@ impl Graph {
                 match root_idx {
                     Some(idx) => self.reachable_from(idx),
                     None => {
-                        eprintln!("mk: --graph: target '{}' not found", root.unwrap_or(""));
+                        eprintln!("target '{}' not found", root.unwrap_or(""));
                         return String::new();
                     }
                 }
