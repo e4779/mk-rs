@@ -33,8 +33,8 @@ enum Format {
 
 /// Visualize and check the dependency graph of an mkfile.
 ///
-/// Outputs the graph in DOT format (default) or JSON.
-/// Pipe to graphviz: mk-graph | dot -Tsvg > graph.svg
+/// Outputs the graph in ASCII art (default), Mermaid, DOT, or JSON.
+/// ASCII/mermaid are for reading; DOT pipes to graphviz (`mk-graph --dot | dot -Tsvg`).
 /// Check mode: mk-graph --check
 #[derive(Parser)]
 #[command(
