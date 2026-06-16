@@ -22,7 +22,7 @@
 | F-012 | Line continuation: `\<newline>` | `lex` | 1a | ✓ |
 | F-013 | Includes: `< file` | `include`, `parse` | 1b | ◐ (include done) |
 | F-014 | First target as default | `graph`, `cli` | 1a | ✓ |
-| F-045 | Rule header evaluated at parse time | `parse`, `var` | 1a | ✓ |
+| F-045 | Rule header evaluated at parse time | `parse`, `var` | 1a | ✓ (was false `✓` before 2026-06-16 fix — headers now truly expanded at parse time per F-045 design) |
 | F-063 | Backquote command substitution in mkfile | `lex`, `var` | 1b | ◐ (lex done) |
 | F-066 | Glob expansion in prerequisites | `graph` | 3 | ◐ (expands, test name misleading) |
 | F-067 | `-f mkfile` flag | `cli` | 1a | — |
@@ -33,10 +33,11 @@
 |----|---------|--------|-------|--------|
 | F-002 | Variables: `$VAR` / `${VAR}` | `var` | 1a | ✓ |
 | F-003 | Assignment: `VAR=value` | `parse`, `var` | 1a | ✓ |
-| F-039 | Namelist transform: `${VAR:A%B=C%D}` | `var` | 2 | — |
+| F-003a | Quoting in values: `'...'` (no expand, one word), `"..."` (expand, one word) | `lex` | 1a | ◐ (lexer keeps quote chars; ref strips them in non-recipe mode. See `docs/design-f-045.md` §7 quoting divergence) |
+| F-039 | Namelist transform: `${VAR:A%B=C%D}` | `var` | 2 | ✓ (via F-045 parse-time expansion in headers) |
 | F-040 | Environment variable import | `var` | 1a | ✓ |
 | F-041 | Variable precedence (cmdline > file > env > builtin) | `var` | 1a | ✓ |
-| F-042 | Command-line assignment `mk VAR=value` | `cli`, `var` | 1a | — |
+| F-042 | Command-line assignment `mk VAR=value` | `cli`, `var` | 1a | ✓ (implemented in F-045 Phase 5; sticky-override via Precedence::CommandLine) |
 | F-046 | Short-circuit variable eval (recipe execution time) | `var` | 1b | ✓ |
 | F-064 | Variables exported to recipe environment | `var`, `recipe` | 1a | ✓ |
 

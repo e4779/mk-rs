@@ -75,14 +75,23 @@ mk-core = "0.1"
 
 ```rust
 use mk_core::lex::{tokenize, ShellMode};
-use mk_core::parse::parse;
+use mk_core::parse::{parse, parse_with_scope};
 use mk_core::graph::build_graph;
 use mk_core::sched::{execute, ResolvedRule, SchedOptions};
+use mk_core::var::{builtin_scope, import_env, Precedence};
 use mk_shell::ShShell;
 
 fn main() -> anyhow::Result<()> {
     let mkfile = std::fs::read_to_string("mkfile")?;
     let tokens = tokenize(&mkfile, ShellMode::Sh)?;
+
+    // parse() is a convenience wrapper that builds a fresh scope
+    // (builtins + env). For pre-seeded scopes (e.g., CLI vars),
+    // use parse_with_scope:
+    //   let mut scope = builtin_scope();
+    //   import_env(&mut scope);
+    //   scope.set_raw("VAR", "value", Precedence::CommandLine);
+    //   let stmts = parse_with_scope(&tokens, &mut scope)?;
     let stmts = parse(&tokens)?;
     let mut graph = build_graph(&stmts, &["prog".into()])?;
     let rules = /* build rules map from stmts */;
