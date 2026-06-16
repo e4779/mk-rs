@@ -1,14 +1,10 @@
-// mk-graph: Dependency graph visualizer for mk-rs.
-//
-// Reads a mkfile and outputs its dependency graph in JSON or DOT format.
-// Separate from `mk` to keep the core build tool lean.
-//
-// Usage:
-//   mk-graph                              # DOT to stdout
-//   mk-graph --json                       # JSON to stdout
-//   mk-graph --dead-ends                  # list dead-end targets
-//   mk-graph --orphans                    # list orphan prerequisites
-//   mk-graph --check                      # run all checks
+//! Standalone dependency graph visualization and diagnosis tool for mk-rs.
+//!
+//! Reads a mkfile and outputs its dependency graph in multiple formats
+//! (ASCII, Mermaid, DOT, JSON). Supports dead-end detection, orphan
+//! prerequisite listing, and structural checks. Kept as a separate binary
+//! from `mk` to avoid bloating the build tool with serde and visualization
+//! dependencies.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;

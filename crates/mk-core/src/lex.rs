@@ -1,14 +1,12 @@
-// Tokenizer for Plan 9 mk mkfile syntax.
-//
-// Character-by-character state machine. Handles:
-//   - Comment stripping (# outside quotes/backticks)
-//   - Line continuation (\ + \n → space in sh, elided in rc)
-//   - Backtick regions (opaque — stored literally)
-//   - Quoted strings (single + double, rc doubles '' for literal ')
-//   - Special chars (: = < |) with ${…} nesting awareness
-//   - Indentation detection (first non-newline char is space/tab → Indent)
-//
-// See kb/mk-spec.md features F-001 through F-016.
+//! Tokenizer for Plan 9 mk mkfile syntax.
+//!
+//! Character-by-character state machine. Handles:
+//!   - Comment stripping (`#` outside quotes/backticks)
+//!   - Line continuation (`\` + `\n` → space in sh, elided in rc)
+//!   - Backtick regions (opaque — stored literally)
+//!   - Quoted strings (single + double, rc doubles `''` for literal `'`)
+//!   - Special chars (`:` `=` `<` `|`) with `${…}` nesting awareness
+//!   - Indentation detection (first non-newline char is space/tab → Indent)
 
 use std::fmt;
 use thiserror::Error;

@@ -1,7 +1,9 @@
-// mk-cli: Command-line interface for mk-rust.
-//
-// Plan 9 mk compatible build tool.
-// Thin wrapper around mk-core: parse args → read mkfile → build DAG → execute.
+//! Command-line interface for mk-rust.
+//!
+//! Thin CLI wrapper around mk-core. Parses flags (via clap derive):
+//! `-f` (mkfile), `-n` (no-exec), `-e` (explain), `-a` (force),
+//! `-k` (keep-going), `-t` (touch), `-p` (NPROC), and more.
+//! Reads the mkfile, builds scope, runs `mk_core::build()`, prints results.
 
 use std::io::IsTerminal;
 use std::collections::HashMap;

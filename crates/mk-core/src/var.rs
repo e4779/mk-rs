@@ -10,6 +10,14 @@
 //! Expansion uses a seen-set cycle detector: deep chains resolve
 //! (no depth limit), cycles yield empty/partial — never an error, never a hang.
 //! Supports namelist transforms: `${VAR:%.c=%.o}`.
+//!
+//! # Recipe-time variables
+//!
+//! `$target`, `$prereq`, `$stem`, `$newprereq`, `$alltarget`, and `$pid`
+//! are **not** expanded by [`Scope`] at parse time. Instead, the scheduler
+//! injects them as environment variables into the recipe's execution context
+//! just before the shell runs (see [`crate::recipe::Recipe`]). This means they
+//! bypass the normal scope chain and are never stored in a mkfile assignment.
 
 use std::collections::{HashMap, HashSet};
 

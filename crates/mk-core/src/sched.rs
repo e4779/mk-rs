@@ -1,6 +1,6 @@
 //! Build scheduler — orchestrates DAG traversal and recipe execution.
 //!
-//! Phase 2: sequential and parallel execution (NPROC). No metarules.
+//! Supports both sequential and parallel execution (controlled by `$NPROC`).
 //!
 //! # Architecture
 //!
@@ -10,6 +10,26 @@
 //!
 //! - `topological_sort` orders stale nodes so prerequisites build first.
 //! - `execute` walks the sorted nodes and dispatches to `run_recipe`.
+//!
+//! # Design
+//!
+//! **Worker pool.** `NPROC` threads pull jobs from a shared queue.
+//! A node is *ready* when all its prerequisites are `MADE` (successfully
+//! built) or already up-to-date. The topological walk enqueues ready nodes
+//! and recurses. Backpressure: if no free slot, `work()` blocks until a job
+//! finishes.
+//!
+//! **Exclusive jobs (`E` attribute).** When an exclusive job is scheduled,
+//! all other workers finish their current jobs and block until the exclusive
+//! job completes. Mirrors plan9port `reserveExclusiveSubproc()`. Useful for
+//! recipes that consume all cores or touch shared state.
+//!
+//! **Keep-going (`-k`).** Failed nodes are recorded; their dependents are
+//! skipped. Sibling branches continue independently. The build outcome reports
+//! partial success/failure.
+//!
+//! **Dynamic NPROC.** The `$NPROC` variable is read from scope at runtime
+//! and can change mid-build (checked on each scheduling cycle).
 
 use crate::attr::Attributes;
 use crate::error::SchedError;

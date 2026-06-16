@@ -1,3 +1,28 @@
+//! Concrete [`Shell`] implementations for mk-core.
+//!
+//! Provides `ShShell` (POSIX `/bin/sh -ec`), `CustomShell` (user-configurable
+//! via `$MKSHELL`), and `DuckShell` (embedded duckscript, feature-gated behind
+//! the `duckscript` feature). All implement the [`mk_rs_core::shell::Shell`]
+//! trait.
+//!
+//! # Design
+//!
+//! **ShShell** wraps `std::process::Command` with `/bin/sh -ec`, passing
+//! environment variables via `cmd.env()`. Recipe text is supplied as the `-c`
+//! argument.
+//!
+//! **Quote escaping.** sh single-quotes with `'...'` (embedded `'` escaped
+//! as `'\''`). rc was originally planned but is not shipped — sh +
+//! `$MKSHELL` covers all practical use cases, and rc would require an `rc`
+//! binary on the host.
+//!
+//! **`find_unescaped`** scans for a character outside of shell quotes.
+//! Used by the attribute parser in mk-core to detect quoted `=` characters
+//! in assignment values. The escaping rules are shell-specific (backslash in
+//! sh, double-quote in rc).
+//!
+//! [`mk_rs_core::shell::Shell`]: ../mk_rs_core/shell/trait.Shell.html
+
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
@@ -89,7 +114,7 @@ impl Shell for ShShell {
 // ── Custom shell (MKSHELL) ─────────────────────────────────────────────────
 
 /// Custom shell that uses the command from $MKSHELL.
-/// E.g., MKSHELL=/bin/bash → runs /bin/bash -ec <recipe>
+/// E.g., MKSHELL=/bin/bash → runs /bin/bash -ec `<recipe placeholder>`
 #[derive(Debug, Clone)]
 pub struct CustomShell {
     cmd: String,

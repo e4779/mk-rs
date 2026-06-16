@@ -11,6 +11,39 @@
 //! - `build_graph` constructs the full transitive closure from requested targets.
 //! - Cycle detection runs as a post-pass over the built graph.
 //! - Staleness determines which targets need rebuilding.
+//!
+//! # Design
+//!
+//! **Arena storage.** Nodes and arcs live in `Vec<Node>` and `Vec<Arc>`,
+//! referenced by `NodeIndex(usize)` / `ArcIndex(usize)` newtypes.
+//! Contiguous, cache-friendly, no `Rc` cycles. The graph is immutable after
+//! construction — build phase only, then read-only traversal.
+//!
+//! **Metarule matching order.** For each unknown target, the builder tries:
+//! `%` metarules first (single-`%` pattern), then `&` (ampersand — matches one
+//! target), then `R:` regex metarules. First match wins.
+//!
+//! **Transitive closure.** Recursively resolve prereqs of prereqs.
+//! Stop conditions: (a) the name exists as a file on disk,
+//! (b) the target has the `V` (virtual) attribute, (c) already visited
+//! (cycle — unless `-i` forces).
+//!
+//! **Pruning.** After the full graph is built:
+//! - *Vacuous* pruning removes meta-arcs whose metarule recipe was never needed.
+//! - *Ambiguous* pruning removes meta-arcs that are redundant because a
+//!   concrete rule already covers the same target.
+//!
+//! **Cycle detection.** DFS post-pass with `visiting` / `visited` marking.
+//! A back-edge from a node currently in the `visiting` set is a cycle →
+//! `GraphError::Cycle`. Supports `-i` override (force intermediates).
+//!
+//! **Staleness.** A target is stale if:
+//! - Its `mtime` is older than any prereq's `mtime`,
+//! - It does not exist on disk (missing file), or
+//! - Any prereq is itself stale.
+//!
+//! Virtual targets (`V` attribute) are unconditionally stale — they have no
+//! file to compare.
 
 use std::collections::HashMap;
 

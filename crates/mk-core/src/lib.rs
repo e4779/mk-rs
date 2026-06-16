@@ -1,20 +1,67 @@
-// mk-core: plan9 mk build-tool core library.
-//
-// Architecture:
-//   mkfile text → lex → tokens → parse → AST → graph → DAG → sched → recipe exec
-//
-// Modules:
-//   lex    — tokenizer (F-001..F-016)
-//   attr   — rule attribute bitflags (F-009..F-010, F-023..F-028)
-//   error  — unified error type (all modules)
-//   parse  — parser: rules, assignments, includes (Phase 1b)
-//   graph  — DAG builder, staleness, cycle detection (Phase 1a)
-//   var    — variable system, symbol table, expansion (Phase 1a)
-//   shell  — Shell trait (Phase 1a)
-//   recipe — recipe execution glue (Phase 1a)
-//   sched  — scheduler: serial & parallel execution (Phase 1a serial, Phase 2 parallel)
-//   include — recursive mkfile includes (Phase 1b)
-//   archive — lib(member) syntax (Phase 3)
+//! plan9 mk build-tool core library.
+//!
+//! mk-core is a faithful Rust port of Andrew Hume's Plan 9 `mk`. It reads mkfiles,
+//! builds a dependency graph, resolves pattern-based metarules, and dispatches
+//! parallel recipe execution through a shell abstraction.
+//!
+//! # Pipeline
+//!
+//! Each `build()` call runs these stages in sequence, each producing an owned
+//! output consumed by the next:
+//!
+//! ```text
+//! ┌──────────────┐
+//! │   mkfile(s)   │  user-authored text
+//! └──────┬───────┘
+//!        │
+//! ┌──────▼───────┐
+//! │  lex::Lexer   │  char-by-char → token stream
+//! └──────┬───────┘
+//!        │  TokenStream
+//! ┌──────▼───────┐
+//! │ parse::Parser │  recursive descent → AST
+//! └──────┬───────┘
+//!        │  Vec<Stmt>
+//! ┌──────▼───────┐
+//! │  var::Scope   │  expand variables
+//! └──────┬───────┘
+//!        │  expanded AST
+//! ┌──────▼───────┐
+//! │ graph::Builder│  AST → DAG (metarules, transitive closure, pruning)
+//! └──────┬───────┘
+//!        │  Graph
+//! ┌──────▼───────┐
+//! │graph::Checker │  staleness (mtime comparison)
+//! └──────┬───────┘
+//!        │  BuildPlan
+//! ┌──────▼───────┐
+//! │ sched::Engine │  parallel DAG walk, NPROC worker pool
+//! └──────┬───────┘
+//!        │  Job queue
+//! ┌──────▼───────┐
+//! │recipe::Runner │  feed recipe to shell
+//! └──────┬───────┘
+//!        │  exit code
+//! ┌──────▼───────┐
+//! │ BuildOutcome  │  success, partial (with -k), or failure
+//! └──────────────┘
+//! ```
+//!
+//! # Module roster
+//!
+//! | Module | Purpose |
+//! |--------|---------|
+//! | [`lex`] | Tokenizer — comment stripping, line continuation, backtick regions, quoting |
+//! | [`parse`] | Recursive-descent parser — rules, assignments, includes, attributes |
+//! | [`graph`] | DAG builder — metarule application, transitive closure, cycle/staleness checks |
+//! | [`var`] | Variable system — symbol table, `$VAR`/`${VAR}` expansion, namelists |
+//! | [`shell`] | `Shell` trait — abstraction for recipe execution (implementations in mk-shell) |
+//! | [`recipe`] | Recipe glue — env injection, attribute handling, CLI flag dispatch |
+//! | [`sched`] | Scheduler — parallel DAG traversal, NPROC worker pool, keep-going support |
+//! | [`attr`] | Attribute bitflags — `V`/`Q`/`N`/`U`/`D`/`E`/`P`/`R`/`n` |
+//! | [`mod@include`] | Recursive `< file` includes — child scopes, circular detection |
+//! | [`archive`] | `lib(member)` syntax — archive member auto-rule generation |
+//! | [`error`] | Centralized error types — `MkError`, `LexError`, `ParseError`, … |
 
 pub mod lex;
 pub mod attr;

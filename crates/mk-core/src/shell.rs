@@ -1,3 +1,12 @@
+//! Shell abstraction for recipe execution.
+//!
+//! Defines the [`Shell`] trait, which abstracts the strategy for executing
+//! recipe scripts. The trait lives in mk-core; concrete implementations
+//! (`ShShell`, `DuckShell`, `CustomShell`) are provided by the mk-shell crate.
+//!
+//! Shell-specific quoting rules (`find_unescaped`, `quote`) enable the
+//! attribute parser to handle `=` inside quoted strings correctly.
+
 use std::collections::HashMap;
 use std::path::Path;
 
