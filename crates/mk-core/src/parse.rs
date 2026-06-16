@@ -1057,4 +1057,44 @@ mod tests {
         }).unwrap();
         assert_eq!(rule.prereqs, vec!["cli_value"]);
     }
+
+    // ── F-063: rc-style backtick end-to-end ──
+
+    #[test]
+    fn f063_rc_backtick_in_assignment() {
+        // `{echo one two} → one two (backtick expanded at set time)
+        use crate::var::builtin_scope;
+        let mut scope = builtin_scope();
+        let tokens = tokenize("A = `{echo one two}\n", ShellMode::Sh).unwrap();
+        parse_with_scope(&tokens, &mut scope).unwrap();
+        assert_eq!(scope.get("A"), Some("one two"));
+    }
+
+    #[test]
+    fn f063_rc_backtick_in_prereq_indirect() {
+        // `{echo x.c y.c} stored in A; t: $A → prereqs x.c y.c
+        use crate::var::builtin_scope;
+        let mut scope = builtin_scope();
+        let input = "A = `{echo x.c y.c}\nt: $A\n";
+        let tokens = tokenize(input, ShellMode::Sh).unwrap();
+        let stmts = parse_with_scope(&tokens, &mut scope).unwrap();
+        let rule = stmts.iter().find_map(|s| {
+            if let Stmt::Rule(r) = s { Some(r) } else { None }
+        }).unwrap();
+        assert_eq!(rule.prereqs, vec!["x.c", "y.c"]);
+    }
+
+    #[test]
+    fn f063_rc_backtick_end_to_end() {
+        // DATA = `{echo a.toon b.toon}; t: $DATA → prereqs a.toon, b.toon
+        use crate::var::builtin_scope;
+        let mut scope = builtin_scope();
+        let input = "DATA = `{echo a.toon b.toon}\nt: $DATA\n";
+        let tokens = tokenize(input, ShellMode::Sh).unwrap();
+        let stmts = parse_with_scope(&tokens, &mut scope).unwrap();
+        let rule = stmts.iter().find_map(|s| {
+            if let Stmt::Rule(r) = s { Some(r) } else { None }
+        }).unwrap();
+        assert_eq!(rule.prereqs, vec!["a.toon", "b.toon"]);
+    }
 }

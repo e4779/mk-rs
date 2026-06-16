@@ -387,49 +387,66 @@ impl Lexer {
     ///
     /// Contents are stored literally; `\`+`\n` line continuation is still
     /// applied because every character flows through `next_char()`.
+    ///
+    /// Both styles are shell-independent — this is an mkfile-level lexer
+    /// feature (plan9port lex.c::bquote). The stored token always ends with
+    /// a closing backtick so `expand_backtick` can strip delimiters uniformly.
     fn read_backtick(
         &mut self,
         word: &mut String,
         start_pos: usize,
     ) -> Result<(), LexError> {
-        // Detect rc-style: `{ ... }
-        let rc_style = self.peek_char() == Some('{');
+        // ── plan9port lex.c::bquote: skip whitespace after ` ──
+        // while((c = Bgetrune(bp)) == ' ' || c == '\t') ;
+        let first = loop {
+            match self.next_char() {
+                Some(c) if c == ' ' || c == '\t' => continue,
+                other => break other,
+            }
+        };
 
-        if rc_style {
-            // consume the {
-            self.pos += 1;
-            word.push('{');
-
-            loop {
-                let c = match self.next_char() {
-                    Some(c) => c,
-                    None => {
-                        return Err(LexError::UnterminatedBacktick {
-                            pos: start_pos,
-                        });
+        match first {
+            Some('{') => {
+                // rc-style: terminator is }
+                word.push('{');
+                // plan9port: while((c = Bgetrune(bp)) == ' ' || c == '\t') ;
+                self.skip_whitespace();
+                loop {
+                    let c = match self.next_char() {
+                        Some(c) => c,
+                        None => {
+                            return Err(LexError::UnterminatedBacktick {
+                                pos: start_pos,
+                            });
+                        }
+                    };
+                    word.push(c);
+                    if c == '}' {
+                        // Closing backtick so expand_backtick sees `{…}`
+                        word.push('`');
+                        return Ok(());
                     }
-                };
-                word.push(c);
-                if c == '}' {
-                    return Ok(());
                 }
             }
-        } else {
-            // sh-style: read until closing `
-            loop {
-                let c = match self.next_char() {
-                    Some(c) => c,
-                    None => {
-                        return Err(LexError::UnterminatedBacktick {
-                            pos: start_pos,
-                        });
-                    }
-                };
+            Some(c) => {
+                // sh-style: first non-whitespace char is part of the content
                 word.push(c);
-                if c == '`' {
-                    return Ok(());
+                loop {
+                    let c = match self.next_char() {
+                        Some(c) => c,
+                        None => {
+                            return Err(LexError::UnterminatedBacktick {
+                                pos: start_pos,
+                            });
+                        }
+                    };
+                    word.push(c);
+                    if c == '`' {
+                        return Ok(());
+                    }
                 }
             }
+            None => Err(LexError::UnterminatedBacktick { pos: start_pos }),
         }
     }
 }
@@ -638,9 +655,38 @@ mod tests {
 
     #[test]
     fn backtick_command_rc_style() {
+        // rc-style: terminator is }, lexer adds trailing ` for uniform format
         assert_eq!(
             tokenize("`{echo hello}", ShellMode::Sh).unwrap(),
-            tks(vec![w("`{echo hello}")])
+            tks(vec![w("`{echo hello}`")])
+        );
+    }
+
+    #[test]
+    fn backtick_command_rc_style_with_space() {
+        // plan9port-compatible: whitespace between ` and { is skipped
+        assert_eq!(
+            tokenize("` {echo hello}", ShellMode::Sh).unwrap(),
+            tks(vec![w("`{echo hello}`")])
+        );
+    }
+
+    #[test]
+    fn rc_style_backtick_unterminated() {
+        // F-063: unterminated rc-style backtick — missing closing }
+        let result = tokenize("`{unclosed", ShellMode::Sh);
+        assert!(matches!(
+            result,
+            Err(LexError::UnterminatedBacktick { .. })
+        ));
+    }
+
+    #[test]
+    fn sh_style_backtick_still_works() {
+        // F-063 regression: sh-style `cmd` must not break
+        assert_eq!(
+            tokenize("`echo hello`", ShellMode::Sh).unwrap(),
+            tks(vec![w("`echo hello`")])
         );
     }
 
