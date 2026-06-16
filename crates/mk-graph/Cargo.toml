@@ -1,16 +1,16 @@
 [package]
 name = "mk-graph"
-version = "0.1.6"
+version = "0.2.0"
 edition = "2021"
-description = "Graph visualization for mk-rs: JSON, DOT export"
+description = "Graph visualization for mk-rs: ASCII, Mermaid, DOT, JSON export"
 license = "MIT"
 repository = "https://github.com/YOU/mk-rs"
-keywords = ["mk", "graph", "dot", "json", "visualization"]
+keywords = ["mk", "graph", "ascii", "mermaid", "visualization"]
 categories = ["development-tools::build-utils"]
 
 [dependencies]
-mk-rs-core = { path = "../mk-core", version = "0.1.6" }
-mk-rs-shell = { path = "../mk-shell", version = "0.1.6" }
+mk-rs-core = { path = "../mk-core", version = "0.2.0" }
+mk-rs-shell = { path = "../mk-shell", version = "0.2.0" }
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
