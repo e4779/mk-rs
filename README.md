@@ -152,7 +152,7 @@ fn main() -> anyhow::Result<()> {
 ## Building from source
 
 ```bash
-# Requirements: Rust 1.80+
+# Requirements: Rust 1.92+ (the `mk-graph` crate depends on `ascii-dag`)
 git clone https://github.com/your-org/mk-rust.git
 cd mk-rust
 
@@ -220,23 +220,28 @@ The `mk-graph` companion binary (installed alongside `mk`) visualizes the
 dependency graph. It keeps `mk` itself focused on building.
 
 ```bash
-# Show entire graph in DOT format
+# Default: terminal-friendly ASCII art (auto-laid-out via Sugiyama)
 mk-graph
 
-# Show subgraph reachable from a specific target
-mk-graph --target data/processed/result.json
+# Mermaid block — renders inline on GitHub/GitLab/Obsidian, LLM-friendly
+mk-graph --format mermaid
 
-# Render to SVG
-mk-graph | dot -Tsvg > graph.svg
+# Graphviz DOT — pipe to `dot -Tsvg > graph.svg`
+mk-graph --dot
 
-# JSON export (for programmatic inspection)
+# JSON — programmatic inspection
 mk-graph --json
+
+# Subgraph reachable from a specific target
+mk-graph --target data/processed/result.json
 
 # Check for dead-end targets and orphan prerequisites
 mk-graph --check
 ```
 
-Edge labels show the mkfile line number where the rule is defined.
+Formats are also selectable via `-F ascii|mermaid|dot|json`; `--ascii` is the
+default. Edge labels show `meta` for metarule-derived arcs or the mkfile line
+number (`L9`) where the rule is defined.
 
 ## License
 

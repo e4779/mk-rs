@@ -86,6 +86,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ascii-dag"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cd898d2dcffeeb51015c511a2849a8637c894b833afc946936d48b1e5c8aa6ec"
+
+[[package]]
 name = "attohttpc"
 version = "0.28.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -886,6 +892,7 @@ dependencies = [
 name = "mk-graph"
 version = "0.1.6"
 dependencies = [
+ "ascii-dag",
  "clap",
  "mk-rs-core",
  "mk-rs-shell",

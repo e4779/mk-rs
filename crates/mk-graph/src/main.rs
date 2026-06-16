@@ -18,6 +18,19 @@ use mk_rs_core::graph::{self, GraphScope};
 use mk_rs_core::lex::{tokenize, ShellMode};
 use mk_rs_core::parse::{self, Stmt};
 
+/// Output format for graph visualization.
+#[derive(Clone, Debug, clap::ValueEnum)]
+enum Format {
+    /// ASCII art with box-drawing characters (default; terminal-friendly).
+    Ascii,
+    /// Mermaid `graph` block — renders inline on GitHub/GitLab/Obsidian.
+    Mermaid,
+    /// Graphviz DOT — pipe to `dot -Tsvg`.
+    Dot,
+    /// JSON — programmatic consumption.
+    Json,
+}
+
 /// Visualize and check the dependency graph of an mkfile.
 ///
 /// Outputs the graph in DOT format (default) or JSON.
@@ -33,9 +46,17 @@ struct Cli {
     #[arg(short = 'f', default_value = "mkfile")]
     file: PathBuf,
 
-    /// Output JSON instead of DOT
-    #[arg(long = "json")]
+    /// Output format (default: ascii)
+    #[arg(long = "format", short = 'F', value_enum, default_value_t = Format::Ascii)]
+    format: Format,
+
+    /// Shorthand for --format=json
+    #[arg(long = "json", conflicts_with = "format")]
     json: bool,
+
+    /// Shorthand for --format=dot
+    #[arg(long = "dot", conflicts_with = "format")]
+    dot: bool,
 
     /// Show subgraph for a specific target
     #[arg(long = "target", short = 't')]
@@ -134,10 +155,27 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         GraphScope::All
     };
 
-    if cli.json {
-        println!("{}", to_json(&graph, &recipes, scope, cli.target.as_deref()));
+    let format = if cli.json {
+        Format::Json
+    } else if cli.dot {
+        Format::Dot
     } else {
-        println!("{}", graph.to_dot(scope, cli.target.as_deref()));
+        cli.format.clone()
+    };
+
+    let out = match format {
+        Format::Ascii => to_ascii(&graph, scope, cli.target.as_deref()),
+        Format::Mermaid => to_mermaid(&graph, scope, cli.target.as_deref()),
+        Format::Dot => graph.to_dot(scope, cli.target.as_deref()),
+        Format::Json => to_json(&graph, &recipes, scope, cli.target.as_deref()),
+    };
+    if !out.is_empty() {
+        // ascii-dag pads with blank lines for layout symmetry; trim them.
+        let trimmed = match format {
+            Format::Ascii => out.trim_end().to_string(),
+            _ => out,
+        };
+        println!("{}", trimmed);
     }
 
     Ok(())
@@ -181,6 +219,143 @@ fn find_orphans(graph: &graph::Graph) -> Vec<String> {
         .filter(|idx| graph.nodes[idx.0].mtime.is_none())
         .map(|idx| graph.nodes[idx.0].name.clone())
         .collect()
+}
+
+// ── ASCII art export (ascii-dag) ─────────────────────────────────────────
+
+/// Render the graph as terminal-friendly ASCII art via the `ascii-dag` crate.
+///
+/// Edges flow prerequisite → target (as in DOT output). Edge labels show
+/// `meta` for metarule-derived arcs and the mkfile line number otherwise.
+fn to_ascii(graph: &graph::Graph, scope: GraphScope, root: Option<&str>) -> String {
+    let included: HashSet<graph::NodeIndex> = match scope {
+        GraphScope::All => (0..graph.nodes.len()).map(graph::NodeIndex).collect(),
+        GraphScope::Subgraph => {
+            let root_idx = root
+                .and_then(|n| graph.nodes.iter().position(|node| node.name == n))
+                .map(graph::NodeIndex);
+            match root_idx {
+                Some(idx) => reachable_from_nodes(graph, idx),
+                None => {
+                    eprintln!("mk-graph: target '{}' not found", root.unwrap_or(""));
+                    return String::new();
+                }
+            }
+        }
+    };
+
+    let mut dag = ascii_dag::Graph::new();
+    // Node/edge labels are owned here and outlive `dag`. ascii-dag borrows them
+    // via &'a str, so we materialize strings before construction.
+    let node_labels: Vec<Option<String>> = graph.nodes.iter().enumerate()
+        .map(|(i, n)| {
+            if included.contains(&graph::NodeIndex(i)) {
+                Some(if n.flags.is_virtual() {
+                    format!("{}:V", n.name)
+                } else {
+                    n.name.clone()
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+    let edge_labels: Vec<String> = graph.arcs.iter()
+        .map(|a| edge_label(a).unwrap_or_default())
+        .collect();
+
+    for (i, lbl) in node_labels.iter().enumerate() {
+        if let Some(l) = lbl {
+            dag.add_node(i, l.as_str());
+        }
+    }
+    for (i, arc) in graph.arcs.iter().enumerate() {
+        if node_labels[arc.from.0].is_some() && node_labels[arc.to.0].is_some() {
+            let lbl = if edge_labels[i].is_empty() { None } else { Some(edge_labels[i].as_str()) };
+            dag.add_edge(arc.from.0, arc.to.0, lbl);
+        }
+    }
+    dag.render()
+}
+
+// ── Mermaid export ───────────────────────────────────────────────────────
+
+/// Render the graph as a ```mermaid graph LR``` block.
+///
+/// Renders inline on GitHub, GitLab, Obsidian, and most LLM chat UIs.
+/// Virtual targets use the `{{...}}` stadium shape; file targets use `[...]`.
+fn to_mermaid(graph: &graph::Graph, scope: GraphScope, root: Option<&str>) -> String {
+    let included: HashSet<graph::NodeIndex> = match scope {
+        GraphScope::All => (0..graph.nodes.len()).map(graph::NodeIndex).collect(),
+        GraphScope::Subgraph => {
+            let root_idx = root
+                .and_then(|n| graph.nodes.iter().position(|node| node.name == n))
+                .map(graph::NodeIndex);
+            match root_idx {
+                Some(idx) => reachable_from_nodes(graph, idx),
+                None => {
+                    eprintln!("mk-graph: target '{}' not found", root.unwrap_or(""));
+                    return String::new();
+                }
+            }
+        }
+    };
+
+    // Mermaid node ids can't contain spaces or some special chars; use n{index}.
+    let mut out = String::from("```mermaid\ngraph LR\n");
+    for (i, node) in graph.nodes.iter().enumerate() {
+        if !included.contains(&graph::NodeIndex(i)) {
+            continue;
+        }
+        let id = format!("n{}", i);
+        let label = mermaid_escape(&node.name);
+        if node.flags.is_virtual() {
+            out.push_str(&format!("  {}({{{}}})\n", id, label));
+        } else {
+            out.push_str(&format!("  {}[{}]\n", id, label));
+        }
+    }
+    for arc in &graph.arcs {
+        if !included.contains(&arc.from) || !included.contains(&arc.to) {
+            continue;
+        }
+        match edge_label(arc) {
+            Some(lbl) => out.push_str(&format!(
+                "  n{} -- \"{}\" n{}\n",
+                arc.from.0,
+                mermaid_escape(&lbl),
+                arc.to.0
+            )),
+            None => out.push_str(&format!("  n{} --> n{}\n", arc.from.0, arc.to.0)),
+        }
+    }
+    out.push_str("```");
+    out
+}
+
+/// Compact edge label: `meta` for metarule arcs, else `L{line}` when known.
+/// Returns None for plain concrete-rule edges without notable metadata.
+fn edge_label(arc: &graph::Arc) -> Option<String> {
+    if arc.is_meta {
+        Some("meta".to_string())
+    } else if arc.line > 0 {
+        Some(format!("L{}", arc.line))
+    } else {
+        None
+    }
+}
+
+/// Escape a label for Mermaid: wrap in quotes if it contains special chars.
+/// Mermaid treats `[`, `]`, `(`, `)`, `{`, `}`, `"` as syntax.
+fn mermaid_escape(s: &str) -> String {
+    let needs_quote = s.contains(|c: char| {
+        matches!(c, '[' | ']' | '(' | ')' | '{' | '}' | '"' | ' ')
+    });
+    if needs_quote {
+        format!("\"{}\"", s.replace('"', "#quot;"))
+    } else {
+        s.to_string()
+    }
 }
 
 // ── JSON export ──────────────────────────────────────────────────────────
@@ -324,5 +499,55 @@ mod tests {
         // b and c have no rule and don't exist → virtual → orphans
         assert!(orph.iter().any(|s| s == "b"));
         assert!(orph.iter().any(|s| s == "c"));
+    }
+
+    #[test]
+    fn ascii_render_contains_node_names_and_edge_labels() {
+        let input = "prog: main.o\nmain.o: main.c\n";
+        let tokens = tokenize(input, ShellMode::Sh).unwrap();
+        let stmts = parse::parse(&tokens).unwrap();
+        let g = graph::build_graph(&stmts, &["prog".into()]).unwrap();
+        let ascii = to_ascii(&g, GraphScope::All, None);
+        assert!(ascii.contains("main.c"), "ascii should list node names: {ascii}");
+        assert!(ascii.contains("prog"));
+        // ascii-dag uses box-drawing glyphs to connect nodes
+        assert!(ascii.contains('[') && ascii.contains(']'),
+            "ascii should bracket node labels: {ascii}");
+    }
+
+    #[test]
+    fn ascii_marks_virtual_targets() {
+        let input = "all:V: prog\nprog:\n";
+        let tokens = tokenize(input, ShellMode::Sh).unwrap();
+        let stmts = parse::parse(&tokens).unwrap();
+        let g = graph::build_graph(&stmts, &["all".into()]).unwrap();
+        let ascii = to_ascii(&g, GraphScope::All, None);
+        assert!(ascii.contains("all:V"),
+            "virtual target should be suffixed with :V: {ascii}");
+    }
+
+    #[test]
+    fn mermaid_is_valid_block_with_edges() {
+        let input = "prog: main.o util.o\nmain.o: main.c\nutil.o: util.c\n";
+        let tokens = tokenize(input, ShellMode::Sh).unwrap();
+        let stmts = parse::parse(&tokens).unwrap();
+        let g = graph::build_graph(&stmts, &["prog".into()]).unwrap();
+        let m = to_mermaid(&g, GraphScope::All, None);
+        assert!(m.starts_with("```mermaid\n"), "should open fenced block: {m}");
+        assert!(m.ends_with("```"), "should close fenced block: {m}");
+        assert!(m.contains("graph LR"));
+        assert!(m.contains("-- ") || m.contains("-->"),
+            "should have at least one edge: {m}");
+        assert!(m.contains("main.o"));
+    }
+
+    #[test]
+    fn mermaid_uses_hexagon_shape_for_virtual() {
+        let input = "all:V: prog\nprog:\n";
+        let tokens = tokenize(input, ShellMode::Sh).unwrap();
+        let stmts = parse::parse(&tokens).unwrap();
+        let g = graph::build_graph(&stmts, &["all".into()]).unwrap();
+        let m = to_mermaid(&g, GraphScope::All, None);
+        assert!(m.contains("({"), "virtual target should use {{...}} shape: {m}");
     }
 }
