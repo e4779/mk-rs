@@ -9,11 +9,83 @@ gaps by design, not bugs.
 
 | Gate | Status |
 |------|--------|
-| `cargo test` | ✅ 335 passing, 0 failed, 1 ignored |
+| `cargo test` | ✅ 336 passing, 0 failed, 1 ignored |
 | `cargo clippy --all-targets --all-features -- -D warnings` | ✅ Clean |
 | `cargo build` | ✅ Clean |
 
-**No active bugs.** All three entries below are resolved.
+**No active bugs.** All entries below are resolved.
+
+---
+
+## Active
+
+### Bug 4: `:V:` (virtual) target with up-to-date prerequisites never runs its recipe — FIXED
+
+**Found:** 2026-06-16 (invest-research pipeline — `mk dict-check` silently
+no-op'd on every run after the first, masking dictionary verification)
+
+**Expected (plan9port reference mk):** A virtual target is *always considered
+stale* — its recipe runs on **every** invocation, regardless of whether its
+prerequisites are up to date. Confirmed against `/usr/local/plan9/bin/mk`:
+
+```
+$ cat min.mk
+vwith:V: in.txt
+	echo "RECIPE-FIRED"
+$ echo input > in.txt
+$ /usr/local/plan9/bin/mk -f min.mk vwith   # run 1
+RECIPE-FIRED
+$ /usr/local/plan9/bin/mk -f min.mk vwith   # run 2, prereq stable
+RECIPE-FIRED
+```
+
+This matches the man page (`docs/mk-man-plan9port.md`): virtual targets are
+"initially zero; set to most recent prerequisite's date stamp **when updated**",
+and the `V` attribute means "always considered stale" — also stated verbatim in
+mk-rust's own `ATTR_HELP` (`crates/mk-core/src/attr.rs:158`):
+> `("V", "Virtual target — not a real file, always considered stale")`.
+
+**Actual (mk-rust 0.2.1):** A `:V:` target whose prereqs are up to date is
+treated as up to date itself, so the recipe is **skipped**. With up-to-date
+prereqs the recipe never fires at all (not even on the first run), because the
+virtual node is assigned its prereqs' timestamp and judged fresh:
+
+```
+$ /home/e41q/.cargo/bin/mk -f min.mk vwith   # run 1 — BUG: no output
+$ /home/e41q/.cargo/bin/mk -f min.mk vwith   # run 2 — no output
+```
+
+The no-prereq case (`vnone:V:`) works correctly (always runs) — so the bug is
+specifically the *prereq present + up to date* path.
+
+**Root cause:** `crates/mk-core/src/graph.rs:682-684` in `check_stale()`:
+
+```rust
+let stale = if node.flags.is_virtual() {
+    // Virtual: stale if any prereq is stale, OR if no prereqs (always run)
+    prereq_stale || node.arcs_in.is_empty()
+```
+
+The expression `prereq_stale || node.arcs_in.is_empty()` was wrong — it only
+marked a virtual target stale when a prereq was stale or when there were no
+prereqs. Per spec a virtual target is **unconditionally stale**.
+
+**Impact:** Any `:V:` target used for verification/side-effects that reads
+up-to-date files (e.g. invest-research `dict-check`, `help`, `fetch-all`) was
+silently skipped, defeating its purpose.
+
+**Fix:** the virtual branch now returns `true` unconditionally. Downstream
+staleness (a real target depending on a virtual prereq) already worked
+correctly via `effective_mtime=None` (virtual prereq makes dependent stale),
+so the fix only changes the virtual node's own rebuild decision — no
+downstream regression. Verified end-to-end against `/usr/local/plan9/bin/mk`:
+`vwith:V: in.txt` now fires every run; `vnone:V:` still works; downstream
+still fires every run (matches reference).
+
+**Tests:** `virtual_with_prereqs_always_stale` added next to the existing
+`virtual_no_prereqs_always_stale` (graph.rs). 335 → 336 tests, clippy clean.
+
+**Commit:** (this commit)
 
 ---
 

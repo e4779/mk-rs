@@ -680,8 +680,14 @@ fn check_stale(
     }
 
     let stale = if node.flags.is_virtual() {
-        // Virtual: stale if any prereq is stale, OR if no prereqs (always run)
-        prereq_stale || node.arcs_in.is_empty()
+        // Virtual targets are ALWAYS stale — they have no file to check, so mk
+        // runs their recipe on every invocation regardless of prereq freshness.
+        // (Spec: man page + attr.rs ATTR_HELP "always considered stale".)
+        // This applies whether or not the virtual has prereqs: a virtual with
+        // up-to-date prereqs still fires (e.g. verification/side-effect targets
+        // like `dict-check:V: deps`). Downstream staleness is handled separately
+        // via effective_mtime=None (virtual prereq makes dependent stale).
+        true
     } else if node.mtime.is_none() {
         // File doesn't exist — always stale.
         // (Missing intermediate optimization would skip this node if no
@@ -1629,6 +1635,32 @@ mod tests {
         let stale = stale_nodes(&g, false);
         let clean_idx = g.nodes.iter().position(|n| n.name == "clean").unwrap();
         assert!(stale.contains(&NodeIndex(clean_idx)), "virtual target with no prereqs must always be stale");
+    }
+
+    #[test]
+    fn virtual_with_prereqs_always_stale() {
+        // Bug 4 regression: a virtual target with an up-to-date prereq must
+        // STILL be stale — virtual targets are unconditionally stale (they
+        // have no file to check), so their recipe runs on every invocation.
+        // Reference: plan9port mk fires `vwith:V: in.txt` even when in.txt
+        // is unchanged. The previous code (graph.rs check_stale) returned
+        // `prereq_stale || arcs_in.is_empty()`, which wrongly marked a
+        // virtual with fresh prereqs as up-to-date, skipping its recipe.
+        let dir = std::env::temp_dir().join("mk_test_virtual_with_prereqs");
+        let _ = std::fs::create_dir_all(&dir);
+        let prereq = dir.join("in.txt");
+        std::fs::write(&prereq, "input").unwrap();
+        let prev = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&dir).unwrap();
+        let g = graph_from_str("vwith:V: in.txt\n\techo hi\n", &["vwith"]).unwrap();
+        let stale = stale_nodes(&g, false);
+        std::env::set_current_dir(prev).unwrap();
+        let vidx = g.nodes.iter().position(|n| n.name == "vwith").unwrap();
+        assert!(
+            stale.contains(&NodeIndex(vidx)),
+            "virtual target with up-to-date prereqs must STILL be stale (Bug 4)"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
