@@ -1,12 +1,14 @@
 //! Parser for mkfile syntax.
 //!
 //! Converts lexer tokens into an AST: rules and variable assignments.
-//! Phase 1a scope: concrete rules only. No metarules, includes, or variable expansion.
+//! F-045: parser carries a `&mut Scope` and expands variables at parse time
+//! (read-time semantics), mirroring plan9port `parse.c` / `word.c`.
 
 use crate::attr::{parse_attributes, Attributes, ParseAttrError};
 use crate::error::ParseError;
 use crate::include::IncludeContext;
 use crate::lex::Token;
+use crate::var::{builtin_scope, import_env, Precedence, Scope};
 use std::path::{Path, PathBuf};
 
 // ── AST types ──────────────────────────────────────────────────────────────
@@ -41,26 +43,49 @@ pub struct Assign {
 
 // ── Public API ─────────────────────────────────────────────────────────────
 
-/// Parse tokens into statements.
+/// Parse tokens into statements with a fresh scope (builtins + env).
 ///
-/// Thin wrapper that delegates to [`parse_with_includes`] with a fresh
-/// include context and the current working directory as the base.
+/// Thin wrapper that builds a default scope and delegates to
+/// [`parse_with_scope`]. Suitable for tests and library usage when
+/// no pre-seeded scope is needed.
 pub fn parse(tokens: &[Token]) -> Result<Vec<Stmt>, ParseError> {
+    let mut scope = builtin_scope();
+    import_env(&mut scope);
+    parse_with_scope(tokens, &mut scope)
+}
+
+/// Parse tokens into statements, expanding variables against the given scope.
+///
+/// The scope is mutated in place: each `Assign` statement expands its RHS
+/// and stores the result in `scope` at parse time (read-time semantics).
+/// Rule headers (targets, prereqs) are NOT expanded here — that happens
+/// in Phase 3.
+///
+/// Callers who want CLI-override vars (S10) should pre-populate the scope
+/// with `CommandLine`-precedence values before calling this function.
+pub fn parse_with_scope(
+    tokens: &[Token],
+    scope: &mut Scope,
+) -> Result<Vec<Stmt>, ParseError> {
     parse_with_includes(
         tokens,
         &mut IncludeContext::new(),
         &std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        scope,
     )
 }
 
-/// Parse tokens with include support.
+/// Parse tokens with include support and variable expansion.
 ///
 /// Handles `< file` include directives by reading and parsing the
 /// referenced mkfile. The `base_dir` is used to resolve relative paths.
+/// `scope` is threaded through includes so that included files share
+/// the same variable namespace.
 fn parse_with_includes(
     tokens: &[Token],
     ctx: &mut IncludeContext,
     base_dir: &Path,
+    scope: &mut Scope,
 ) -> Result<Vec<Stmt>, ParseError> {
     let mut stmts = Vec::new();
     let mut pos: usize = 0;
@@ -81,7 +106,7 @@ fn parse_with_includes(
                         pos += 1;
                     }
                     let command = cmd_parts.join(" ");
-                    match ctx.include_command(&command, base_dir) {
+                    match ctx.include_command(&command, base_dir, scope) {
                         Ok(included_stmts) => {
                             stmts.extend(included_stmts);
                         }
@@ -103,7 +128,7 @@ fn parse_with_includes(
                         pos += 1;
                     }
                     let path = path_parts.join(" ");
-                    match ctx.include_file(&path, base_dir) {
+                    match ctx.include_file(&path, base_dir, scope) {
                         Ok(included_stmts) => {
                             stmts.extend(included_stmts);
                         }
@@ -132,17 +157,17 @@ fn parse_with_includes(
             }
             Token::Word(_) => {
                 if is_assignment(tokens, pos) {
-                    let assign = parse_assign(tokens, &mut pos, &mut line)?;
+                    let assign = parse_assign(tokens, &mut pos, &mut line, scope)?;
                     stmts.push(Stmt::Assign(assign));
                 } else {
-                    let rule = parse_rule(tokens, &mut pos, &mut line)?;
+                    let rule = parse_rule(tokens, &mut pos, &mut line, scope)?;
                     stmts.push(Stmt::Rule(rule));
                 }
             }
             _ => {
                 // Colon at start or other unexpected token — try parse_rule
                 // (produces EmptyTarget for bare colon, ExpectedColon otherwise)
-                let rule = parse_rule(tokens, &mut pos, &mut line)?;
+                let rule = parse_rule(tokens, &mut pos, &mut line, scope)?;
                 stmts.push(Stmt::Rule(rule));
             }
         }
@@ -190,6 +215,7 @@ fn parse_assign(
     tokens: &[Token],
     pos: &mut usize,
     line: &mut usize,
+    scope: &mut Scope,
 ) -> Result<Assign, ParseError> {
     // Variable name
     let name = match &tokens[*pos] {
@@ -214,7 +240,7 @@ fn parse_assign(
     }
     *pos += 1;
 
-    // Collect value words
+    // Collect raw value words
     let mut parts: Vec<&str> = Vec::new();
     while *pos < tokens.len() && matches!(&tokens[*pos], Token::Word(_)) {
         if let Token::Word(s) = &tokens[*pos] {
@@ -222,7 +248,14 @@ fn parse_assign(
         }
         *pos += 1;
     }
-    let value = parts.join(" ");
+    let raw_value = parts.join(" ");
+
+    // Expand the RHS and store in scope (S2: read-time, fully expanded).
+    // The precedence gate in scope.set prevents mkfile reassigns from
+    // overriding CLI vars (S10).
+    scope.set(&name, &raw_value, Precedence::Mkfile);
+    // Read back the expanded value for the AST.
+    let expanded_value = scope.get(&name).unwrap_or(&raw_value).to_string();
 
     // Consume trailing newline
     if *pos < tokens.len() && matches!(&tokens[*pos], Token::Newline) {
@@ -230,7 +263,10 @@ fn parse_assign(
         *line += 1;
     }
 
-    Ok(Assign { name, value })
+    Ok(Assign {
+        name,
+        value: expanded_value,
+    })
 }
 
 // ── rule parsing ───────────────────────────────────────────────────────────
@@ -239,19 +275,20 @@ fn parse_rule(
     tokens: &[Token],
     pos: &mut usize,
     line: &mut usize,
+    scope: &mut Scope,
 ) -> Result<Rule, ParseError> {
     let start_line = *line;
 
-    // Collect targets (words left of colon)
-    let mut targets: Vec<String> = Vec::new();
+    // Collect raw targets (words left of colon)
+    let mut raw_targets: Vec<String> = Vec::new();
     while *pos < tokens.len() && matches!(&tokens[*pos], Token::Word(_)) {
         if let Token::Word(s) = &tokens[*pos] {
-            targets.push(s.clone());
+            raw_targets.push(s.clone());
         }
         *pos += 1;
     }
 
-    if targets.is_empty() {
+    if raw_targets.is_empty() {
         return Err(ParseError::EmptyTarget { line: start_line });
     }
 
@@ -262,6 +299,8 @@ fn parse_rule(
     *pos += 1; // consume `:`
 
     // Check for attributes between colons: `target:VQ: prereq`
+    // S9: do NOT expand the attribute token — it is parsed literally.
+    // A `$` in the attribute-word is a syntax error in the reference.
     let mut attrs = Attributes::new();
     let mut prog: Option<String> = None;
     if *pos < tokens.len()
@@ -283,18 +322,18 @@ fn parse_rule(
     }
     // else: single colon, no attributes
 
-    // Collect prerequisites (words right of colon)
-    let mut prereqs: Vec<String> = Vec::new();
+    // Collect raw prerequisites (words right of colon)
+    let mut raw_prereqs: Vec<String> = Vec::new();
     while *pos < tokens.len() && matches!(&tokens[*pos], Token::Word(_)) {
         if let Token::Word(s) = &tokens[*pos] {
-            prereqs.push(s.clone());
+            raw_prereqs.push(s.clone());
         }
         *pos += 1;
     }
 
-    // Detect GNU Make $(...) syntax in prereqs and reject with clear error.
-    // mk has its own glob syntax (*.txt, dir/*.c) — $(wildcard ...) is not needed.
-    for prereq in &prereqs {
+    // Detect GNU Make $(...) syntax on RAW tokens (before expansion).
+    // mk has its own glob syntax (*.txt, dir/*.c) — $(wildcard ...) is not supported.
+    for prereq in &raw_prereqs {
         if prereq.contains("$(") {
             return Err(ParseError::UnexpectedToken {
                 expected: "mk glob pattern (e.g., '*.txt' or 'dir/*.c')".into(),
@@ -307,6 +346,14 @@ fn parse_rule(
         }
     }
 
+    // F-045 Phase 3: expand each target/prereq word through scope,
+    // then split into possibly-multiple words (S11a: whole-word $VAR).
+    // S5: namelist transforms (${VAR:%=%}) work via scope.expand.
+    // S7: recipe-time vars ($prereq, $target, $stem, etc.) are NOT
+    //     defined at parse time → expand to empty string.
+    let targets: Vec<String> = expand_and_split(&raw_targets, scope);
+    let prereqs: Vec<String> = expand_and_split(&raw_prereqs, scope);
+
     // Consume trailing newline after header
     if *pos < tokens.len() && matches!(&tokens[*pos], Token::Newline) {
         *pos += 1;
@@ -316,6 +363,8 @@ fn parse_rule(
     // Collect recipe (indented lines)
     let recipe = parse_recipe(tokens, pos, line);
 
+    // S13/E-2: is_metarule must run on EXPANDED target text.
+    // A variable like PAT=%.o in the scope can make `$PAT` a metarule.
     let is_metarule = targets.iter().any(|t| t.contains('%') || t.contains('&'));
     let is_regex = attrs.is_regex();
 
@@ -370,6 +419,28 @@ fn extract_prog_from_attr(attr_str: &str) -> (String, Option<String>) {
 }
 
 // ── recipe parsing ─────────────────────────────────────────────────────────
+
+/// Expand each word in a rule-header position through the scope,
+/// then split each expanded result on whitespace into possibly-many words.
+///
+/// This implements S11a (whole-word `$VAR` → multiple targets/prereqs).
+/// Uses `split_whitespace` for the split; literal-glue cases (S11b/c)
+/// are a known gap tracked by F-003a.
+fn expand_and_split(raw_words: &[String], scope: &mut Scope) -> Vec<String> {
+    let mut result = Vec::new();
+    for word in raw_words {
+        let expanded = scope.expand(word);
+        // split_whitespace: correct for whole-word $VAR (S11a).
+        // For literal-glue (pre.$VAR / $VAR.x) with multi-word values,
+        // the split may diverge from the reference — see F-003a.
+        for part in expanded.split_whitespace() {
+            if !part.is_empty() {
+                result.push(part.to_string());
+            }
+        }
+    }
+    result
+}
 
 /// Collect indented lines after a rule header.
 ///
@@ -795,11 +866,14 @@ mod tests {
 
     #[test]
     fn allows_dollar_without_paren_in_prereq() {
-        // $@ or other single-char $ forms should not trigger the check
+        // F-045 S7: recipe-time vars ($prereq, $target, etc.) are NOT
+        // defined at parse time → expand to empty string.
+        // Previously this test asserted literal "$prereq"; now it asserts
+        // empty — matching plan9port mk reference behavior.
         let stmts = parse_str("target: $prereq\n\techo x\n").unwrap();
         match &stmts[0] {
             Stmt::Rule(r) => {
-                assert_eq!(r.prereqs, vec!["$prereq"]);
+                assert_eq!(r.prereqs, Vec::<String>::new());
             }
             _ => panic!("expected Rule"),
         }
@@ -815,5 +889,172 @@ mod tests {
             }
             _ => panic!("expected Rule"),
         }
+    }
+
+    // ── F-045 Phase 2/3 contract tests ─────────────────────────────────
+
+    #[test]
+    fn f045_s1_read_time_expansion() {
+        // S1: rule header uses the variable's value AT the line where
+        // the rule is read, not the final value.
+        let input = "TARG=early\ntarget: $TARG\nTARG=late\n";
+        let stmts = parse_str(input).unwrap();
+        let rule_stmts: Vec<_> = stmts.iter().filter_map(|s| {
+            if let Stmt::Rule(r) = s { Some(r) } else { None }
+        }).collect();
+        assert_eq!(rule_stmts.len(), 1);
+        assert_eq!(rule_stmts[0].prereqs, vec!["early"]);
+    }
+
+    #[test]
+    fn f045_s2_assign_rhs_expanded() {
+        // S2: Assignment RHS is recursively expanded at assignment time.
+        let stmts = parse_str("A=world\nB=hello $A\n").unwrap();
+        let assigns: Vec<_> = stmts.iter().filter_map(|s| {
+            if let Stmt::Assign(a) = s { Some((a.name.as_str(), a.value.as_str())) } else { None }
+        }).collect();
+        assert_eq!(assigns, vec![("A", "world"), ("B", "hello world")]);
+    }
+
+    #[test]
+    fn f045_s4_var_is_word_list() {
+        // S4: A variable is a word list. $VAR in a header produces one
+        // target/prereq per word.
+        let input = "SRCS=a.c b.c\ntarget: $SRCS\n";
+        let stmts = parse_str(input).unwrap();
+        let rule = stmts.iter().find_map(|s| {
+            if let Stmt::Rule(r) = s { Some(r) } else { None }
+        }).unwrap();
+        assert_eq!(rule.prereqs, vec!["a.c", "b.c"]);
+    }
+
+    #[test]
+    fn f045_s4_var_is_word_list_targets() {
+        // S4: Multiple targets from a variable.
+        let input = "TARGS=x y z\n$TARGS:\n";
+        let stmts = parse_str(input).unwrap();
+        let rule = stmts.iter().find_map(|s| {
+            if let Stmt::Rule(r) = s { Some(r) } else { None }
+        }).unwrap();
+        assert_eq!(rule.targets, vec!["x", "y", "z"]);
+    }
+
+    #[test]
+    fn f045_s5_namelist_in_header() {
+        // S5: ${VAR:%.c=%.o} works in target and prereq position.
+        let input = "SRC=a.c b.c\ntarget: ${SRC:%.c=%.o}\n";
+        let stmts = parse_str(input).unwrap();
+        let rule = stmts.iter().find_map(|s| {
+            if let Stmt::Rule(r) = s { Some(r) } else { None }
+        }).unwrap();
+        assert_eq!(rule.prereqs, vec!["a.o", "b.o"]);
+    }
+
+    #[test]
+    fn f045_s6_dollar_dollar_in_header() {
+        // S6: $$ -> $ in headers, then re-scanned.
+        let input = "SRCS=a.c\ntarget: $$SRCS\n";
+        let stmts = parse_str(input).unwrap();
+        let rule = stmts.iter().find_map(|s| {
+            if let Stmt::Rule(r) = s { Some(r) } else { None }
+        }).unwrap();
+        assert_eq!(rule.prereqs, vec!["a.c"]);
+    }
+
+    #[test]
+    fn f045_s7_recipe_var_in_header_empties() {
+        // S7: $target, $prereq, $stem, etc. are NOT defined at parse time
+        // -> expand to empty string.
+        let input = "target: $prereq $stem $target\n\techo hi\n";
+        let stmts = parse_str(input).unwrap();
+        let rule = stmts.iter().find_map(|s| {
+            if let Stmt::Rule(r) = s { Some(r) } else { None }
+        }).unwrap();
+        assert_eq!(rule.prereqs, Vec::<String>::new());
+    }
+
+    #[test]
+    fn f045_s9_var_target_before_attrs_no_attr_expand() {
+        // S9: Target word expands, but the attribute word does NOT.
+        let input = "objtype=x86\n${objtype}l.h:Q:\n";
+        let stmts = parse_str(input).unwrap();
+        let rule = stmts.iter().find_map(|s| {
+            if let Stmt::Rule(r) = s { Some(r) } else { None }
+        }).unwrap();
+        assert_eq!(rule.targets, vec!["x86l.h"]);
+        assert!(rule.attributes.is_quiet());
+    }
+
+    #[test]
+    fn f045_s13_var_to_metarule() {
+        // S13/E-2: $PAT where PAT=%.o produces a metarule.
+        let input = "PAT=%.o\n$PAT: %.c\n";
+        let stmts = parse_str(input).unwrap();
+        let rule = stmts.iter().find_map(|s| {
+            if let Stmt::Rule(r) = s { Some(r) } else { None }
+        }).unwrap();
+        assert!(rule.is_metarule, "variable expanding to %-pattern should be metarule");
+        assert_eq!(rule.targets, vec!["%.o"]);
+    }
+
+    #[test]
+    fn f045_s13_var_to_multi_target() {
+        // S13/E-3: $NAMES where NAMES=alpha beta produces multiple rules.
+        let input = "NAMES=alpha beta\n$NAMES:\n";
+        let stmts = parse_str(input).unwrap();
+        let rule = stmts.iter().find_map(|s| {
+            if let Stmt::Rule(r) = s { Some(r) } else { None }
+        }).unwrap();
+        assert_eq!(rule.targets, vec!["alpha", "beta"]);
+    }
+
+    #[test]
+    fn f045_s11a_whole_word_var_many_targets() {
+        // S11a: A variable holding multiple words, used as a whole word,
+        // produces multiple targets/prereqs.
+        let input = "FILES=a.c b.c c.c\n$FILES: deps\n";
+        let stmts = parse_str(input).unwrap();
+        let rule = stmts.iter().find_map(|s| {
+            if let Stmt::Rule(r) = s { Some(r) } else { None }
+        }).unwrap();
+        assert_eq!(rule.targets, vec!["a.c", "b.c", "c.c"]);
+    }
+
+    #[test]
+    fn f045_s11b_literal_glue_prefix() {
+        // S11b: pre.$VAR with multi-word VAR, known gap F-003a.
+        let input = "PARTS=one two\ntarget: pre.$PARTS\n";
+        let stmts = parse_str(input).unwrap();
+        let rule = stmts.iter().find_map(|s| {
+            if let Stmt::Rule(r) = s { Some(r) } else { None }
+        }).unwrap();
+        assert_eq!(rule.prereqs, vec!["pre.one", "two"]);
+    }
+
+    #[test]
+    fn f045_assign_time_order_matters() {
+        let input = "GREETING=$FIRST world\nFIRST=hello\n";
+        let stmts = parse_str(input).unwrap();
+        let assigns: Vec<_> = stmts.iter().filter_map(|s| {
+            if let Stmt::Assign(a) = s { Some((a.name.as_str(), a.value.as_str())) } else { None }
+        }).collect();
+        assert_eq!(assigns, vec![
+            ("GREETING", " world"),
+            ("FIRST", "hello"),
+        ]);
+    }
+
+    #[test]
+    fn f045_parse_with_scope_preserves_cli_vars() {
+        // S10: CLI vars in scope must not be overridden by mkfile assigns.
+        use crate::var::builtin_scope;
+        let mut scope = builtin_scope();
+        scope.set_raw("VAR", "cli_value", super::Precedence::CommandLine);
+        let tokens = tokenize("VAR=mkfile_value\ntarget: $VAR\n", ShellMode::Sh).unwrap();
+        let stmts = parse_with_scope(&tokens, &mut scope).unwrap();
+        let rule = stmts.iter().find_map(|s| {
+            if let Stmt::Rule(r) = s { Some(r) } else { None }
+        }).unwrap();
+        assert_eq!(rule.prereqs, vec!["cli_value"]);
     }
 }

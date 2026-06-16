@@ -6,7 +6,8 @@
 
 use crate::error::IncludeError;
 use crate::lex::{tokenize, ShellMode};
-use crate::parse::{parse, Stmt};
+use crate::parse::{parse_with_scope, Stmt};
+use crate::var::Scope;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -39,6 +40,9 @@ impl IncludeContext {
     /// `path` is the path as written in the mkfile (may be relative).
     /// `base_dir` is the directory of the including mkfile, used to resolve
     /// relative paths.
+    /// `scope` is the parent scope — included files share the same
+    /// variable namespace. The path is expanded through `scope.expand`
+    /// before resolution (S8: `< $INCL` / `` < `{echo sub.mk}` ``).
     ///
     /// Returns the parsed statements from the included file, or an
     /// `IncludeError` on failure (circular include, file not found, or
@@ -47,12 +51,16 @@ impl IncludeContext {
         &mut self,
         path: &str,
         base_dir: &Path,
+        scope: &mut Scope,
     ) -> Result<Vec<Stmt>, IncludeError> {
+        // 0. Expand path through scope (S8)
+        let expanded_path = scope.expand(path);
+
         // 1. Resolve path
-        let resolved = if path.starts_with('/') {
-            PathBuf::from(path)
+        let resolved = if expanded_path.starts_with('/') {
+            PathBuf::from(&expanded_path)
         } else {
-            base_dir.join(path)
+            base_dir.join(&expanded_path)
         };
         let canonical = resolved.canonicalize().unwrap_or(resolved);
 
@@ -77,7 +85,7 @@ impl IncludeContext {
         let content = std::fs::read_to_string(&canonical).map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 IncludeError::FileNotFound {
-                    path: path.to_string(),
+                    path: expanded_path.to_string(),
                 }
             } else {
                 IncludeError::Io(e)
@@ -93,7 +101,7 @@ impl IncludeContext {
                     format!("{}: {e}", canonical.display()),
                 ))
             })?;
-            parse(&tokens).map_err(|e| {
+            parse_with_scope(&tokens, scope).map_err(|e| {
                 IncludeError::Io(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     format!("{}: {e}", canonical.display()),
@@ -113,21 +121,27 @@ impl IncludeContext {
     /// The command is executed via `sh -c <command>` with `base_dir` as
     /// the working directory. Stdout is lexed and parsed; stderr is
     /// discarded. Returns an error if the command exits non-zero.
+    /// `scope` is the parent scope; the command is expanded through
+    /// `scope.expand` before execution (S8: `<| $CMD`).
     pub fn include_command(
         &mut self,
         command: &str,
         base_dir: &Path,
+        scope: &mut Scope,
     ) -> Result<Vec<Stmt>, IncludeError> {
+        // Expand command through scope (S8)
+        let expanded_cmd = scope.expand(command);
+
         let output = std::process::Command::new("sh")
             .arg("-c")
-            .arg(command)
+            .arg(&expanded_cmd)
             .current_dir(base_dir)
             .output()
             .map_err(IncludeError::Io)?;
 
         if !output.status.success() {
             return Err(IncludeError::CommandFailed {
-                command: command.to_string(),
+                command: expanded_cmd,
             });
         }
 
@@ -139,7 +153,7 @@ impl IncludeContext {
             ))
         })?;
 
-        parse(&tokens).map_err(|e| {
+        parse_with_scope(&tokens, scope).map_err(|e| {
             IncludeError::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 e.to_string(),
@@ -159,6 +173,7 @@ impl Default for IncludeContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::var::{Precedence, Scope};
 
     /// Write a temporary mkfile in a test subdirectory and return its path.
     fn write_temp_mkfile(name: &str, content: &str) -> PathBuf {
@@ -173,8 +188,9 @@ mod tests {
     fn include_simple_file() {
         let included = write_temp_mkfile("common.mk", "CC = gcc\n");
         let mut ctx = IncludeContext::new();
+        let mut scope = Scope::new();
         let stmts = ctx
-            .include_file(included.to_str().unwrap(), &std::env::temp_dir())
+            .include_file(included.to_str().unwrap(), &std::env::temp_dir(), &mut scope)
             .unwrap();
         assert_eq!(stmts.len(), 1);
     }
@@ -182,7 +198,8 @@ mod tests {
     #[test]
     fn include_file_not_found() {
         let mut ctx = IncludeContext::new();
-        let result = ctx.include_file("nonexistent.mk", &PathBuf::from("."));
+        let mut scope = Scope::new();
+        let result = ctx.include_file("nonexistent.mk", &PathBuf::from("."), &mut scope);
         assert!(matches!(result, Err(IncludeError::FileNotFound { .. })));
     }
 
@@ -193,10 +210,11 @@ mod tests {
         let dir = path.parent().unwrap().to_path_buf();
 
         let mut ctx = IncludeContext::new();
+        let mut scope = Scope::new();
         // Simulate an active include chain: push the path first
         ctx.chain.push(canonical);
         // Now try to include it again → circular
-        let result = ctx.include_file(path.to_str().unwrap(), &dir);
+        let result = ctx.include_file(path.to_str().unwrap(), &dir, &mut scope);
         assert!(matches!(result, Err(IncludeError::CircularInclude { .. })));
     }
 
@@ -205,7 +223,8 @@ mod tests {
         let path = write_temp_mkfile("chain_test.mk", "CC = gcc\n");
         let dir = std::env::temp_dir().join("mk_test_include");
         let mut ctx = IncludeContext::new();
-        ctx.include_file(path.to_str().unwrap(), &dir).unwrap();
+        let mut scope = Scope::new();
+        ctx.include_file(path.to_str().unwrap(), &dir, &mut scope).unwrap();
         assert!(ctx.chain.is_empty());
     }
 
@@ -215,7 +234,8 @@ mod tests {
         let bad = write_temp_mkfile("bad_lex.mk", "TARGET: prereq\n\tcmd 'oops\n");
         let dir = std::env::temp_dir().join("mk_test_include");
         let mut ctx = IncludeContext::new();
-        let result = ctx.include_file(bad.to_str().unwrap(), &dir);
+        let mut scope = Scope::new();
+        let result = ctx.include_file(bad.to_str().unwrap(), &dir, &mut scope);
         assert!(result.is_err());
         // Chain must be clean even after error
         assert!(ctx.chain.is_empty());
@@ -228,14 +248,15 @@ mod tests {
         let d = write_temp_mkfile("diamond_d.mk", "VAR = from_d\n");
         let dir = std::env::temp_dir().join("mk_test_include");
         let mut ctx = IncludeContext::new();
+        let mut scope = Scope::new();
 
         // First include of D — should succeed and parse the content.
-        let stmts1 = ctx.include_file(d.to_str().unwrap(), &dir).unwrap();
+        let stmts1 = ctx.include_file(d.to_str().unwrap(), &dir, &mut scope).unwrap();
         assert_eq!(stmts1.len(), 1, "first include of D should return statement");
         assert!(ctx.seen.len() == 1, "D should be in seen set");
 
         // Second include of D (from another branch) — should return empty.
-        let stmts2 = ctx.include_file(d.to_str().unwrap(), &dir).unwrap();
+        let stmts2 = ctx.include_file(d.to_str().unwrap(), &dir, &mut scope).unwrap();
         assert!(stmts2.is_empty(), "second include of D should be empty");
     }
 
@@ -245,8 +266,9 @@ mod tests {
         let d = write_temp_mkfile("diamond_chain_d.mk", "VAR = d_val\n");
         let dir = std::env::temp_dir().join("mk_test_include");
         let mut ctx = IncludeContext::new();
+        let mut scope = Scope::new();
 
-        ctx.include_file(d.to_str().unwrap(), &dir).unwrap();
+        ctx.include_file(d.to_str().unwrap(), &dir, &mut scope).unwrap();
         assert!(ctx.chain.is_empty(), "chain should be empty after include");
         // D should still be marked as seen.
         assert!(ctx.seen.len() == 1, "seen set should contain D");
@@ -256,8 +278,9 @@ mod tests {
     fn absolute_path() {
         let path = write_temp_mkfile("absolute_test.mk", "TARGET = foo\n");
         let mut ctx = IncludeContext::new();
+        let mut scope = Scope::new();
         let stmts = ctx
-            .include_file(path.to_str().unwrap(), &PathBuf::from("/unused"))
+            .include_file(path.to_str().unwrap(), &PathBuf::from("/unused"), &mut scope)
             .unwrap();
         assert_eq!(stmts.len(), 1);
     }
@@ -266,8 +289,9 @@ mod tests {
     fn include_empty_file() {
         let path = write_temp_mkfile("empty.mk", "");
         let mut ctx = IncludeContext::new();
+        let mut scope = Scope::new();
         let stmts = ctx
-            .include_file(path.to_str().unwrap(), &std::env::temp_dir())
+            .include_file(path.to_str().unwrap(), &std::env::temp_dir(), &mut scope)
             .unwrap();
         assert!(stmts.is_empty());
     }
@@ -276,8 +300,9 @@ mod tests {
     fn include_with_rule_and_recipe() {
         let path = write_temp_mkfile("recipe_test.mk", "target: prereq\n\techo hello\n");
         let mut ctx = IncludeContext::new();
+        let mut scope = Scope::new();
         let stmts = ctx
-            .include_file(path.to_str().unwrap(), &std::env::temp_dir())
+            .include_file(path.to_str().unwrap(), &std::env::temp_dir(), &mut scope)
             .unwrap();
         assert_eq!(stmts.len(), 1);
         match &stmts[0] {
@@ -297,8 +322,9 @@ mod tests {
             "CC = gcc\nCFLAGS = -Wall\n\nprog: main.o\n\t$(CC) -o $target $prereq\n",
         );
         let mut ctx = IncludeContext::new();
+        let mut scope = Scope::new();
         let stmts = ctx
-            .include_file(path.to_str().unwrap(), &std::env::temp_dir())
+            .include_file(path.to_str().unwrap(), &std::env::temp_dir(), &mut scope)
             .unwrap();
         assert_eq!(stmts.len(), 3);
     }
@@ -313,7 +339,8 @@ mod tests {
         std::fs::write(&sub_path, "VAR = child_value\n").unwrap();
 
         let mut ctx = IncludeContext::new();
-        let stmts = ctx.include_file("sub/child.mk", &parent_dir).unwrap();
+        let mut scope = Scope::new();
+        let stmts = ctx.include_file("sub/child.mk", &parent_dir, &mut scope).unwrap();
         assert_eq!(stmts.len(), 1);
     }
 
@@ -333,13 +360,14 @@ mod tests {
         std::fs::write(&b_path, "CXX = g++\n").unwrap();
 
         let mut ctx = IncludeContext::new();
+        let mut scope = Scope::new();
         let canonical_a = a_path.canonicalize().unwrap();
         let canonical_b = b_path.canonicalize().unwrap();
         ctx.chain.push(canonical_a.clone());
         ctx.chain.push(canonical_b.clone());
 
         // Including a.mk again → circular A -> B -> A
-        let result = ctx.include_file(a_path.to_str().unwrap(), &dir);
+        let result = ctx.include_file(a_path.to_str().unwrap(), &dir, &mut scope);
         match result {
             Err(IncludeError::CircularInclude { chain }) => {
                 assert!(chain.contains("a.mk"));
@@ -353,8 +381,9 @@ mod tests {
     #[test]
     fn include_command_simple() {
         let mut ctx = IncludeContext::new();
+        let mut scope = Scope::new();
         let stmts = ctx
-            .include_command("echo 'TARGET = value'", &std::env::current_dir().unwrap())
+            .include_command("echo 'TARGET = value'", &std::env::current_dir().unwrap(), &mut scope)
             .unwrap();
         assert_eq!(stmts.len(), 1);
         match &stmts[0] {
@@ -369,18 +398,21 @@ mod tests {
     #[test]
     fn include_command_failed() {
         let mut ctx = IncludeContext::new();
+        let mut scope = Scope::new();
         let result =
-            ctx.include_command("exit 1", &std::env::current_dir().unwrap());
+            ctx.include_command("exit 1", &std::env::current_dir().unwrap(), &mut scope);
         assert!(matches!(result, Err(IncludeError::CommandFailed { .. })));
     }
 
     #[test]
     fn include_command_rule_with_recipe() {
         let mut ctx = IncludeContext::new();
+        let mut scope = Scope::new();
         let stmts = ctx
             .include_command(
                 "printf 'target: prereq\n\techo hello\n'",
                 &std::env::current_dir().unwrap(),
+                &mut scope,
             )
             .unwrap();
         assert_eq!(stmts.len(), 1);
@@ -391,6 +423,45 @@ mod tests {
                 assert_eq!(r.recipe, Some("echo hello".into()));
             }
             _ => panic!("expected Rule"),
+        }
+    }
+
+    // ── F-045 S8: include path/command expansion ──────────────────────
+
+    #[test]
+    fn f045_s8_include_path_expanded() {
+        // S8: < $INCL resolves variables in the include path.
+        let included = write_temp_mkfile("s8_test.mk", "CC = gcc\n");
+        let parent_dir = included.parent().unwrap();
+        let file_name = included.file_name().unwrap().to_str().unwrap();
+
+        let mut ctx = IncludeContext::new();
+        let mut scope = Scope::new();
+        scope.set_raw("INCL", file_name, Precedence::Mkfile);
+
+        let stmts = ctx
+            .include_file("$INCL", parent_dir, &mut scope)
+            .unwrap();
+        assert_eq!(stmts.len(), 1);
+    }
+
+    #[test]
+    fn f045_s8_include_command_expanded() {
+        // S8: <| $CMD expands variables in the command.
+        let mut ctx = IncludeContext::new();
+        let mut scope = Scope::new();
+        scope.set_raw("ECHO_CMD", "echo 'TARGET = s8_val'", Precedence::Mkfile);
+
+        let stmts = ctx
+            .include_command("$ECHO_CMD", &std::env::current_dir().unwrap(), &mut scope)
+            .unwrap();
+        assert_eq!(stmts.len(), 1);
+        match &stmts[0] {
+            Stmt::Assign(a) => {
+                assert_eq!(a.name, "TARGET");
+                assert_eq!(a.value, "s8_val");
+            }
+            _ => panic!("expected Assign"),
         }
     }
 }

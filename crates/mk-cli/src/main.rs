@@ -125,6 +125,26 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         std::env::set_current_dir(dir)?;
     }
 
+    // ── F-045 Phase 5: Build scope BEFORE parse ────────────────────────
+
+    // Build fresh scope with built-ins and environment
+    let mut scope = builtin_scope();
+    import_env(&mut scope);
+
+    // F-042: Parse CLI VAR=value assignments FIRST, apply with
+    // CommandLine precedence (sticky-override S10). CLI vars are visible
+    // to all rule headers, include paths, and assignment RHS expansions.
+    // The precedence gate in Scope::set prevents mkfile reassigns.
+    for arg in std::env::args().skip(1) {
+        if let Some(eq_pos) = arg.find('=') {
+            if !arg.starts_with('-') {
+                let var_name = &arg[..eq_pos];
+                let var_value = &arg[eq_pos + 1..];
+                scope.set_raw(var_name, var_value, Precedence::CommandLine);
+            }
+        }
+    }
+
     // Read mkfile: try -f argument first, fall back to "mkfile"
     let input = std::fs::read_to_string(&cli.file).or_else(|_| {
         std::fs::read_to_string("mkfile")
@@ -135,18 +155,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         )
     })?;
 
-    // Lex + Parse
+    // Lex + Parse with scope (F-045: read-time expansion in parse)
     let tokens = tokenize(&input, ShellMode::Sh)?;
-    let stmts = mk_rs_core::parse::parse(&tokens)?;
+    let stmts = mk_rs_core::parse::parse_with_scope(&tokens, &mut scope)?;
 
-    // Build variable scope: built-ins, environment, mkfile assignments
-    let mut scope = builtin_scope();
-    import_env(&mut scope);
-    for stmt in &stmts {
-        if let Stmt::Assign(a) = stmt {
-            scope.set(&a.name, &a.value, Precedence::Mkfile);
-        }
-    }
+    // Post-parse assign loop REMOVED (F-045): scope is already fully
+    // populated by parse_with_scope. Re-setting would re-execute backtick
+    // and waste work.
 
     // Build rules map: target name → resolved rule
     let mut rules: HashMap<String, ResolvedRule> = HashMap::new();
@@ -165,7 +180,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Determine targets: CLI args or first target of first rule
+    // Determine targets: CLI args or first target of first rule.
+    // Filter out VAR=value CLI assignments that clap parsed as positional args.
     let target_names: Vec<String> = if cli.targets.is_empty() {
         let first_rule = stmts.iter().find_map(|s| {
             if let Stmt::Rule(r) = s {
@@ -182,7 +198,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     } else {
-        cli.targets.clone()
+        cli.targets.iter()
+            .filter(|t| !t.contains('='))
+            .cloned()
+            .collect()
     };
 
     // Read $NREP from the variable scope (default "1" via builtin_scope).
