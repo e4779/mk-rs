@@ -103,9 +103,6 @@ Surfaced by audit against `~/wiki/pages/plan-md-best-practices.txt` and
   false** after F-045 (assignment RHS + rule headers WILL expand; only
   recipe-time injection stays true). Rewrite as a scar per two-beat pattern
   (aphorism + procedure). Wait until F-045 lands.
-- [ ] **Keep BUGS.md scar-driven** — it already follows the format (Found /
-  Expected / Actual / Root cause / Fix / Commit). Add the F-045 resolved entry
-  as part of F-045 P6.
 
 ---
 
