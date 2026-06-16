@@ -36,26 +36,38 @@ rust-coder. **Verified by architect** (not just trusted from the report):
 - **invest-research dictionary NOT fixed** — see F-063 below. F-045 is correct;
   the production mkfile hits a *different* pre-existing gap (rc-style backtick).
 
-## F-063 — rc-style backtick `` `{cmd} `` not parsed by sh-shell  `[ ]` **NEW**
+## F-063 — rc-style backtick `` `{cmd} `` not parsed  `[ ]` **DIAGNOSED**
 
 Uncovered by F-045 verification on `invest-research`. The production mkfile
-uses rc-style backtick `` DATA = `{fd -e toon ...} ``. plan9port mk (native
-shell = rc) expands it; mk-rust (default shell = sh) leaves it **literal** —
-so `$DATA_TOONS` stays `` `{fd ...} `` and the dictionary target's prereqs
-never wire up (incrementality still broken in invest-research).
+uses rc-style backtick `` DATA = `{fd -e toon ...} ``. mk-rust leaves it
+**literal** — so `$DATA_TOONS` stays `` `{fd ...} `` and the dictionary
+target's prereqs never wire up (incrementality broken in invest-research).
 
-This is NOT an F-045 bug (sh-style `` `cmd` `` works after F-045). It is the
-pre-existing **F-063** gap (`◐` in TRACEABILITY — "lex done"), specifically
-the rc-dialect branch. Two options:
+### Root cause (verified vs `/usr/local/plan9/src/cmd/mk/`)
 
-1. **Support rc-style `` `{cmd} `` in the lexer** even when `MKSHELL=sh`
-   (the backtick syntax is an mkfile-level construct, not shell-level —
-   plan9port parses it before handing to any shell). Probably the right fix.
-2. **Rewrite invest-research backticks to sh-style** `` `cmd` ``. Cheaper but
-   pushes the divergence onto the user.
+**This is NOT a shell-dialect issue.** `` `{cmd} `` vs `` `cmd` `` is a
+**mkfile-level lexer feature, shell-independent**. `lex.c::bquote` (lines
+75-81) reads the backtick then branches on the NEXT char: `{` → rc-style
+(term = `}`), else sh-style (term = `` ` ``). The command inside is then
+exec'd via the active shell regardless of style.
 
-Verify the exact parsing layer in `/usr/local/plan9/src/cmd/mk/lex.c` /
-`rc.c` before deciding. Reference: spec F-063 in `docs/mk-spec.md`.
+Empirical proof: plan9port mk expands `` `{echo one} `` correctly **even
+under `MKSHELL=sh`**. So the form is parsed before any shell sees it.
+
+### Fix (small, isolated)
+
+`crates/mk-core/src/lex.rs::read_backtick` (lex.rs ~149) currently reads
+only sh-style (until closing `` ` ``). Add the rc-style branch mirroring
+plan9port: after consuming the opening `` ` ``, peek; if `{`, consume it and
+read until `}`; else read until `` ` ``. Shell-independent — do NOT gate on
+`ShellMode`.
+
+### Status
+
+- mk-rs v0.2.1 (released) does NOT have this — invest-research must use
+  sh-style `` `cmd` `` meanwhile (see `docs/mk-rs-v0.2.1-note.md` in
+  invest-research).
+- Target for v0.2.2 (small patch). Low risk — isolated lexer function.
 
 ## F-003a — Quoting in values (lexer strip in non-recipe mode)  `[ ]`
 

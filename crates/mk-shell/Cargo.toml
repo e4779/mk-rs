@@ -1,6 +1,6 @@
 [package]
 name = "mk-rs-shell"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 description = "Shell abstraction for mk: sh, rc implementations"
 license = "MIT"
@@ -12,6 +12,6 @@ categories = ["development-tools::build-utils"]
 duckscript = ["dep:duckscript", "dep:duckscriptsdk"]
 
 [dependencies]
-mk-rs-core = { path = "../mk-core", version = "0.2.1" }
+mk-rs-core = { path = "../mk-core", version = "0.2.2" }
 duckscript = { version = "0.10", optional = true }
 duckscriptsdk = { version = "0.11", optional = true }

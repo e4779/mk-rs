@@ -9,7 +9,7 @@ gaps by design, not bugs.
 
 | Gate | Status |
 |------|--------|
-| `cargo test` | ✅ 336 passing, 0 failed, 1 ignored |
+| `cargo test` | ✅ 342 passing, 0 failed, 1 ignored |
 | `cargo clippy --all-targets --all-features -- -D warnings` | ✅ Clean |
 | `cargo build` | ✅ Clean |
 
