@@ -15,27 +15,12 @@ git-cliff, conventional commits). Next: finish docs, merge Bug A/B
 
 ---
 
-## 1. Project vision
+## Project vision
 
-mk-rust is a faithful, high-quality Rust port of `mk` — Andrew Hume's successor to make. Not a clone of GNU Make, not a reimagining with Lua, not a general task runner.
-
-What mk-rust **is**:
-
-- A dependency-driven build tool that reads mkfiles and runs recipes in parallel
-- A direct port of Plan 9 mk semantics: pattern-based metarules, transitive closure, attribute system, `$stem`/`$target`/`$prereq` variables
-- A library-first crate (`mk-core`) with a thin CLI wrapper (`mk-cli`)
-- Fast, safe, portable — leverages Rust's ownership model where C used raw pointers
-- 100% compatible with existing mkfiles intended for plan9port mk (sh recipes, duckscript optional via `$MKSHELL`)
-
-What mk-rust is **not**:
-
-- A build system for Cargo/Rust projects (use `cargo` for that)
-- A general-purpose task runner (use `just`, `cargo-make`, or shell scripts)
-- A Lua/JS/Python-based build system (duckscript may power *recipes* for power users, but the core tool is pure Rust)
-- GNU Make compatible — no `.PHONY`, no pattern substitution `$(patsubst ...)`, no `--eval`
-- A package manager, a daemon, or a file watcher 
-
-The cat-v.org philosophy applies: mk is a tool for maintaining files. It should be small, composable, and free of accidental complexity. The mkfile is machine-readable documentation of your pipeline. mk-rust honors that.
+→ **Migrated to README.md top** (epigraphs + "What mk-rust is (and is not)"
+block + cat-v philosophy). The user-facing positioning belongs where users
+land first; PLAN.md focuses on strategy (architecture / constraints /
+milestones).
 
 ---
 

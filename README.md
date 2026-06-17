@@ -1,9 +1,33 @@
 # mk-rs
 
-> A faithful Rust port of `mk` — the dependency-driven build tool by Andrew Hume.
-> *"Mk: a successor to make" (1987)*
+> *"The Unix philosophy: Write programs that do one thing and do it well."* — Doug McIlroy
+>
+> *"Mk is an efficient general tool for describing and maintaining dependencies between files or programs."* — Andrew Hume
 
-Pattern-based metarules. Transitive closure. Parallel execution. No built-in magic.
+A faithful Rust port of `mk` — Andrew Hume's successor to make. Pattern-based
+metarules, transitive closure, parallel execution, no built-in magic.
+
+## What mk-rust is (and is not)
+
+**mk-rust is:**
+
+- A dependency-driven build tool that reads mkfiles and runs recipes in parallel
+- A direct port of Plan 9 mk semantics: pattern-based metarules, transitive closure, attribute system, `$stem`/`$target`/`$prereq` variables
+- A library-first crate (`mk-core`) with a thin CLI wrapper (`mk-cli`)
+- Fast, safe, portable — zero `unsafe`, leverages Rust's ownership model where C used raw pointers
+- 100% compatible with existing mkfiles intended for plan9port mk (sh recipes, duckscript optional via `$MKSHELL`)
+
+**mk-rust is not:**
+
+- A build system for Cargo/Rust projects (use `cargo` for that)
+- A general-purpose task runner (use `just`, `cargo-make`, or shell scripts)
+- A Lua/JS/Python-based build system (duckscript may power *recipes* for power users, but the core tool is pure Rust)
+- GNU Make compatible — no `.PHONY`, no `$(patsubst ...)`, no `--eval`
+- A package manager, a daemon, or a file watcher
+
+The cat-v.org philosophy: mk is a tool for maintaining files. Small, composable,
+free of accidental complexity. The mkfile is machine-readable documentation of
+your pipeline.
 
 ## What is mk?
 
