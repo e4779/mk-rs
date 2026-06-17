@@ -1,9 +1,12 @@
 # mk-rust Gotchas
 
 > Operational traps that bite when editing lex/parse/graph/sched or writing
-> mkfiles. Two-beat format where applicable: the rule (the aphorism) + the
-> reason or failure it came from (the procedure). Read before touching parser
-> internals or authoring mkfiles.
+> mkfiles. Each gotcha is a rule plus its reason — what the trap is and why
+> it exists. Where the trap came from a known bug, the reason carries the
+> failure story (a *scar*, per `Scar_Driven_Agent_Docs`). This is rule+reason
+> format, distinct from the aphorism+procedure two-beat used in AGENTS.md —
+> don't mix the terms. Read before touching parser internals or authoring
+> mkfiles.
 
 ---
 
