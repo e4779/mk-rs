@@ -28,8 +28,9 @@ crate-level `//!` in `crates/mk-core/src/lib.rs`, rendered at
 
 What must hold true. What must never happen.
 
-- **No unsafe code.** `#![forbid(unsafe_code)]` in mk-core and mk-shell
-  `lib.rs` — compile-time enforced, cannot be `#[allow]`'d.
+- **No unsafe code.** `#![forbid(unsafe_code)]` in all four crates
+  (mk-core, mk-shell lib.rs; mk-cli, mk-graph main.rs) — compile-time
+  enforced, cannot be `#[allow]`'d.
 - **No daemon / watch mode.** mk is a build tool. Compose with `watchexec` /
   `cargo watch` / shell one-liner (`while inotifywait .; do mk; done`). Plan 9
   mk never had this. (See Decisions below for the why-not.)

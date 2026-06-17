@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Standalone dependency graph visualization and diagnosis tool for mk-rs.
 //!
 //! Reads a mkfile and outputs its dependency graph in multiple formats

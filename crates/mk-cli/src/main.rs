@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Command-line interface for mk-rust.
 //!
 //! Thin CLI wrapper around mk-core. Parses flags (via clap derive):
