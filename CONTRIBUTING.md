@@ -68,12 +68,61 @@ release: v0.2.2 — Bug 4 + F-063
 feat(lex): rc-style backtick {cmd} lexer support
 ```
 
-Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `build`, `ci`,
-`perf`, `style`, `release`.
+**Types** (one of):
 
-This convention feeds `git-cliff` to auto-generate `CHANGELOG.md` (planned;
-see roadmap). Keep commit subjects in the imperative mood ("add", not
-"added").
+| Type | When |
+|------|------|
+| `feat` | New feature (user-facing) |
+| `fix` | Bug fix (user-facing) |
+| `docs` | Documentation only (PLAN/README/docs/*/wiki) |
+| `refactor` | Code change that neither fixes a bug nor adds a feature |
+| `perf` | Performance improvement |
+| `test` | Adding or correcting tests |
+| `testdata` | Corpus / fixture additions |
+| `build` | Build system, dependencies, cliff.toml |
+| `ci` | CI configuration |
+| `chore` | Misc repo tooling (hooks, scripts) |
+| `style` | Formatting, whitespace (cargo fmt hygiene) |
+| `release` | Version bumps and release commits |
+
+**Scope** (optional, lowercase, no spaces) — the affected area:
+
+| Scope | Covers |
+|-------|-------|
+| `core` | `crates/mk-core/` (lex, parse, graph, var, sched, recipe, attr, include) |
+| `shell` | `crates/mk-shell/` (Shell impls) |
+| `cli` | `crates/mk-cli/` (binary, flags) |
+| `graph` | `crates/mk-graph/` (visualization) |
+| `plan` | PLAN.md strategy |  
+| `agents` | AGENTS.md / APPEND_SYSTEM |  
+| `infra` | git hooks, CI, build tooling |  
+| (none) | cross-cutting | 
+
+**Breaking changes:** add `!` after type/scope AND a `BREAKING CHANGE:` footer.
+
+```
+feat(core)!: change default shell from sh to rc
+
+BREAKING CHANGE: mkfiles with sh syntax now need `MKSHELL=sh`.
+```
+
+This convention feeds `git-cliff` to auto-generate `CHANGELOG.md`. Keep
+commit subjects in the imperative mood ("add", not "added"). Subjects
+should read as a sentence completion: "If applied, this commit will _____".
+
+### Generating CHANGELOG.md
+
+`CHANGELOG.md` is **auto-generated** — never hand-edit.
+
+```bash
+# During release:
+git-cliff -o CHANGELOG.md           # regenerate from history
+git add CHANGELOG.md && git commit -m "release: v0.X.Y"
+git tag v0.X.Y
+```
+
+`cliff.toml` at repo root configures section grouping, scopes, and GitHub
+link generation.
 
 ## Architecture orientation
 
