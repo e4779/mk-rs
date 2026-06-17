@@ -15,98 +15,12 @@ git-cliff, conventional commits). Next: finish docs, merge Bug A/B
 
 ---
 
-## Project vision
+## Architecture
 
-→ **Migrated to README.md top** (epigraphs + "What mk-rust is (and is not)"
-block + cat-v philosophy). The user-facing positioning belongs where users
-land first; PLAN.md focuses on strategy (architecture / constraints /
-milestones).
-
----
-
-## 2. Architecture overview
-
-### 2.1 Crate structure
-
-```
-mk-rust/                     # workspace root
-├── Cargo.toml               # workspace: [workspace] members = [...]
-├── PLAN.md                  # this file
-├── crates/
-│   ├── mk-core/             # library: lex + parse + graph + var + sched + shell + attr + archive + include
-│   ├── mk-shell/            # Shell trait + sh/duckscript implementations
-│   └── mk-cli/              # binary: clap CLI, thin wrapper around mk-core
-```
-
-| Crate | Purpose | Dependencies |
-|-------|---------|-------------|
-| `mk-core` | All build logic. Exposes `build(mkfile_path, opts) -> Result<BuildOutcome>`. No I/O in public API surface — takes a `shell: &dyn Shell` and file system via a `FileSystem` trait (testable). | `regex`, `glob`, `serde` (optional, for AST debugging), `thiserror`, `log` |
-| `mk-shell` | `Shell` trait definition (in mk-core), plus `sh::Shell`, `duckscript::Shell` implementations. | `duct` (for sh), `duckscript` + `duckscriptsdk` (optional feature) |
-| `mk-cli` | CLI entry point. Argument parsing, loading mkfile, calling `mk-core::build()`, formatting output. | `clap` (derive), `mk-core`, `mk-shell`, `env_logger` |
-
-### 2.2 Key dependencies
-
-| Crate | Used in | Purpose |
-|-------|---------|---------|
-| `regex` | mk-core (parse, graph) | Compiled regex for `R:` metarules, regex-based stem extraction |
-| `clap` (derive) | mk-cli | CLI argument parsing (`-f`, `-n`, `-e`, `-t`, `-a`, `-p`, `-k`, etc.) |
-| `thiserror` | mk-core | Structured error types (`MkError`) |
-| `duct` | mk-shell (sh, rc) | Process execution with environment passing, stderr capture |
-| `glob` | mk-core (graph) | Path globbing for targets/prereqs in rules |
-| `serde` + `serde_json` | mk-core (optional) | AST serialization (debugging, future LSP, mkfile formatter) |
-| `log` + `env_logger` | mk-cli | Verbose/debug logging |
-| `crossbeam` | mk-core (sched) | Parallel job scheduling (channel-based worker pool) |
-| `tempfile` | mk-core (recipe) | Temp files for inline recipe scripts |
-| `filetime` | mk-core (graph) | File modification time comparison (out-of-date checks) |
-
-### 2.3 Data flow
-
-```
-                      ┌──────────────┐
-                      │   mkfile(s)   │  (user-authored text)
-                      └──────┬───────┘
-                             │
-                    ┌────────▼────────┐
-                    │    lex::Lexer   │  char-by-char → token stream
-                    │  (tokenizer)    │  handles: words, colons, =, <, |, newlines, indents, #comments, backticks
-                    └────────┬────────┘
-                             │  TokenStream (Iterator<Item = Token>)
-                    ┌────────▼────────┐
-                    │  parse::Parser  │  recursive descent → AST
-                    │                 │  Rules, Assignments, Includes, MetaRules
-                    └────────┬────────┘
-                             │  AST (Vec<Stmt>)
-                    ┌────────▼────────┐
-                    │   var::Scope    │  expand variables, resolve symbol table
-                    │                 │  $VAR, ${VAR}, ${VAR:pat=sub}, namelists
-                    └────────┬────────┘
-                             │  expanded AST
-                    ┌────────▼────────┐
-                    │  graph::Builder │  AST → DAG
-                    │                 │  apply meta-rules, transitive closure, pruning
-                    └────────┬────────┘
-                             │  Graph (nodes + arcs)
-                    ┌────────▼────────┐
-                    │ graph::Checker  │  out-of-date check (mtime comparison)
-                    │  (staleness)    │  mark stale nodes, handle virtual targets
-                    └────────┬────────┘
-                             │  BuildPlan (topologically sorted stale nodes)
-                    ┌────────▼────────┐
-                    │  sched::Engine  │  parallel DAG traversal
-                    │                 │  NPROC worker pool, job queue
-                    └────────┬────────┘
-                             │  dequeued Job
-                    ┌────────▼────────┐
-                    │ recipe::Runner  │  feed recipe to shell
-                    │                 │  set $target, $prereq, $stem, env vars
-                    └────────┬────────┘
-                             │  exit code
-                    ┌────────▼────────┐
-                    │   BuildOutcome  │  success, partial (with -k), or failure
-                    └─────────────────┘
-```
-
-Pipeline stages are distinct and sequential within a single `build()` call. Each stage produces an owned output consumed by the next stage. No shared mutable state across stages.
+Pipeline (mkfile → lex → parse+expand → graph → sched → recipe → BuildOutcome),
+crate roster, and per-module design notes live in **`cargo doc`** — see the
+crate-level `//!` in `crates/mk-core/src/lib.rs`, rendered at
+<https://docs.rs/mk-rs-core>. Derivable from code; not duplicated here.
 
 ---
 
