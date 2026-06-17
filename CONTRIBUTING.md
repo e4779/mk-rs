@@ -138,17 +138,23 @@ should read as a sentence completion: "If applied, this commit will _____".
 
 ### Generating CHANGELOG.md
 
-`CHANGELOG.md` is **auto-generated** — never hand-edit.
+`CHANGELOG.md` is **auto-generated** — never hand-edit. The release procedure
+is code-ified in `scripts/release.sh`:
 
 ```bash
-# During release:
-git-cliff -o CHANGELOG.md           # regenerate from history
-git add CHANGELOG.md && git commit -m "release: v0.X.Y"
-git tag v0.X.Y
+./scripts/release.sh patch            # 0.2.X → 0.2.(X+1)
+./scripts/release.sh patch --dry-run   # show what would happen, no changes
+# minor / major analogously
 ```
 
-`cliff.toml` at repo root configures section grouping, scopes, and GitHub
-link generation.
+The script runs pre-checks (clean tree, in sync with origin, gates pass),
+bumps version in all 4 workspace Cargo.toml files, regenerates CHANGELOG via
+`git-cliff` (using `cliff.toml`), pauses for a manual `Current focus` update
+in PLAN.md / TODO.md, then commits, tags, and pushes both remotes (origin =
+gitverse canonical with publish CI; github = mirror). `cargo publish` itself
+is NOT run locally — CI auto-publishes on `v*` tag push, see
+`.gitverse/workflows/ci.yml`. Do not bypass the pre-checks with `--no-verify`
+on release commits; if gates fail, fix them first.
 
 ## Architecture orientation
 
