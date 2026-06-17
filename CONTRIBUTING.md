@@ -17,17 +17,20 @@ Rust 1.92+ required (the `mk-graph` crate depends on `ascii-dag`).
 
 ## Tiered gates
 
-Quality gates are split by cost — fast checks run on every commit, slow
-checks run in CI. This keeps the commit loop snappy without sacrificing
-coverage.
+Quality gates are split by cost — fast checks run on every commit,
+slow checks run on every push. This keeps the commit loop snappy without
+sacrificing coverage.
 
 | Tier | Where | What | Time |
 |------|-------|------|------|
-| **Fast** | `.githooks/pre-commit` | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace` | ~10-30s |
-| **Coverage ratchet** | CI (planned, see roadmap) | `cargo llvm-cov --fail-under-lines N` against a baseline | minutes |
+| **Fast** | `.githooks/pre-commit` | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace` | ~5-10s |
+| **Coverage ratchet** | `.githooks/pre-push` | `cargo llvm-cov --workspace`, compared against `.coverage-baseline` (auto-ratchets up, blocks on >0.10% regression) | ~15s |
 
-The fast hook skips automatically when no `.rs`/`.toml`/`Cargo.lock` files
-are staged (docs-only commits go through instantly).
+Both hooks skip automatically when no `.rs`/`.toml`/`Cargo.lock` files
+are staged/being pushed (docs-only changes go through instantly).
+
+Baseline: **89.90% line coverage** as of v0.2.2+infrastructure. Stored
+in `.coverage-baseline` at repo root.
 
 ### Installing the hooks
 
@@ -39,22 +42,45 @@ This must be done once per clone. The hooks are tracked in `.githooks/`
 (not `.git/hooks/`, which git ignores) so they survive across machines
 and contributors.
 
+### Required tools
+
+```bash
+cargo install cargo-llvm-cov   # for the pre-push coverage gate
+```
+
+`cargo-llvm-cov` requires `llvm-tools-preview` rustup component — it
+will prompt to install on first run.
+
 ### Bypassing (emergencies only)
 
 ```bash
-git commit --no-verify ...
+git commit --no-verify ...      # skip pre-commit
+git push --no-verify ...        # skip pre-push
+COVERAGE_SKIP=1 git push ...    # skip just the coverage gate
 ```
 
 Don't make this a habit — the gates exist because regressions are harder
 to clean up than to prevent. If a gate is wrong, fix the gate.
+
+### Working with the coverage ratchet
+
+The pre-push hook compares total line coverage against `.coverage-baseline`.
+
+- **Coverage within ±0.10% of baseline** → push proceeds, baseline unchanged.
+- **Coverage improved by >0.10%** → push proceeds, baseline auto-bumped in
+  `.coverage-baseline`. Commit it: `git add .coverage-baseline`.
+- **Coverage dropped by >0.10%** → push blocked. Either add tests, or
+  (if the drop is intentional, e.g. removed dead code) update baseline:
+  `echo 89.40 > .coverage-baseline && git add .coverage-baseline`.
+
+The 0.10% tolerance absorbs non-deterministic test jitter (~0.04%
+observed). Without it the ratchet would flap on every push.
 
 ### Verbose mode
 
 ```bash
 CARGO_HOOKS_VERBOSE=1 git commit ...
 ```
-
-Shows full cargo output (useful when a gate fails and the summary is too terse).
 
 ## Commit conventions
 

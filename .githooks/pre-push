@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# mk-rust pre-push hook — coverage ratchet.
+#
+# Runs cargo-llvm-cov and blocks the push if total line coverage falls
+# below the baseline recorded in .coverage-baseline. If coverage grew,
+# the baseline is automatically bumped (that's the "ratchet").
+#
+# Cost: ~15s on a warm build (full clean run ~3-5min; incremental ~15s).
+# Pre-push, not pre-commit — pushes are rarer than commits and represent
+# the "publishing to remote" moment, which is the right checkpoint.
+#
+# Why local (not just CI): see CONTRIBUTING.md "Tiered gates" and the
+# local-first philosophy. Catch regressions in the flow, not a week later.
+#
+# Install:  git config core.hooksPath .githooks
+# Bypass (emergency):  git push --no-verify
+# Skip for a single push:  COVERAGE_SKIP=1 git push
+
+# shellcheck source=./_common.sh
+. "$(dirname "$0")/_common.sh"
+
+# Allow ad-hoc skip (e.g. pushing a WIP branch, doc-only changes).
+[ "${COVERAGE_SKIP:-0}" = "1" ] && { log_warn "COVERAGE_SKIP=1 — skipping coverage gate"; exit 0; }
+
+ROOT="$(ws_root)"
+BASELINE_FILE="$ROOT/.coverage-baseline"
+
+# --- Refuse to run without baseline -------------------------------------
+if [ ! -f "$BASELINE_FILE" ]; then
+    log_warn "no .coverage-baseline file — skipping coverage gate"
+    log_info "create one with: cargo llvm-cov --workspace --summary-only | grep TOTAL"
+    exit 0
+fi
+
+BASELINE=$(cat "$BASELINE_FILE" | tr -dc '0-9.')
+if [ -z "$BASELINE" ]; then
+    log_warn ".coverage-baseline is empty — skipping coverage gate"
+    exit 0
+fi
+
+section "pre-push: coverage ratchet (baseline ${BASELINE}%)"
+
+# --- Optimization: skip when no Rust changes are being pushed -----------
+# Read the commits being pushed (refs passed on stdin: <old> <new> <ref>).
+# If no Rust/Cargo file changed across the pushed range, skip cleanly.
+RUST_CHANGED=0
+while read -r OLD_NEW_REF_LINE; do
+    # Skip branch deletions (old != 0000000 but new == 0000000... actually opposite).
+    set -- $OLD_NEW_REF_LINE
+    OLD="$1"; NEW="$2"
+    [ "$NEW" = "0000000000000000000000000000000000000000" ] && continue  # deletion
+    # Determine the range; for new branches, diff against a known base.
+    if [ "$OLD" = "0000000000000000000000000000000000000000" ]; then
+        RANGE="$NEW"
+    else
+        RANGE="${OLD}..${NEW}"
+    fi
+    if git diff --name-only "$RANGE" | grep -qE '\.(rs|toml)$|^(Cargo\.lock|cliff\.toml)$'; then
+        RUST_CHANGED=1
+        break
+    fi
+done
+[ "$RUST_CHANGED" = "0" ] && { log_info "no Rust/Cargo changes in push — skipping coverage gate"; exit 0; }
+
+# --- Run coverage --------------------------------------------------------
+log_info "measuring coverage (cargo llvm-cov --workspace --summary-only)"
+if ! COV_OUTPUT=$(cd "$ROOT" && cargo llvm-cov --workspace --summary-only 2>&1); then
+    log_fail "cargo llvm-cov failed"
+    printf '%s\n' "$COV_OUTPUT" | tail -20
+    hook_die
+fi
+
+# Extract the TOTAL row's line-coverage percentage.
+# Format: "TOTAL  <regions> ... <lines> <missed_lines> XX.YY% ..."
+CURRENT=$(printf '%s\n' "$COV_OUTPUT" | awk '/^TOTAL/ {for (i=1; i<=NF; i++) if ($i ~ /%$/){print $i; exit}}' | tr -dc '0-9.')
+
+if [ -z "$CURRENT" ]; then
+    log_warn "could not parse coverage percentage from cargo-llvm-cov output"
+    log_info "skipping gate (parsing bug — please investigate)"
+    exit 0
+fi
+
+# Tolerance band: scheduler/parser tests are mildly non-deterministic,
+# producing ~0.04% line-coverage jitter between identical runs. A tolerance
+# of 0.10% absorbs that noise so the ratchet doesn't flap: it only triggers
+# on real regressions (>0.10% drop) or real improvements (>0.10% gain),
+# leaving the baseline untouched for steady-state noise.
+TOLERANCE=0.10
+
+log_info "current coverage: ${CURRENT}%   baseline: ${BASELINE}%   tolerance: ±${TOLERANCE}%"
+
+# Use awk for float comparison (bash doesn't do floats).
+REGRESSED=$(awk "BEGIN { print ($CURRENT < $BASELINE - $TOLERANCE) ? 1 : 0 }")
+IMPROVED=$(awk  "BEGIN { print ($CURRENT > $BASELINE + $TOLERANCE) ? 1 : 0 }")
+
+if [ "$REGRESSED" = "1" ]; then
+    log_fail "coverage regression: ${CURRENT}% < ${BASELINE}% (outside ±${TOLERANCE}% tolerance)"
+    printf '\n'
+    log_info "options:"
+    log_info "  1. Add tests to cover the new/changed code, then push again."
+    log_info "  2. If the drop is intentional (removed dead code, etc.), update baseline:"
+    printf '       echo %.2f > .coverage-baseline && git add .coverage-baseline\n' "$CURRENT"
+    log_info "  3. Bypass this once (emergency only): COVERAGE_SKIP=1 git push"
+    hook_die
+fi
+
+if [ "$IMPROVED" = "1" ]; then
+    log_pass "coverage improved: ${BASELINE}% → ${CURRENT}%   (ratcheting baseline up)"
+    # Auto-bump baseline (ratchet). Two decimals, matches file format.
+    printf '%.2f\n' "$CURRENT" > "$BASELINE_FILE"
+    # Note: we cannot `git add` here (pre-push runs after refs are updated);
+    # the developer commits the new baseline file separately. Print a hint.
+    log_info "baseline bumped in .coverage-baseline — commit it: git add .coverage-baseline"
+else
+    log_pass "coverage within tolerance of baseline (${BASELINE}%, measured ${CURRENT}%)"
+fi
+
+section "coverage gate passed"
+exit 0
