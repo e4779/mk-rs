@@ -8,11 +8,11 @@
 
 ## Current focus
 
-Documentation restructuring complete (#22, #26, #30). PLAN.md slimmed
-1380 → 94 lines; AGENTS.md ultra-thin; gotchas migrated to docs/gotchas.md.
-Infrastructure wave landed (pre-commit hooks, coverage ratchet, git-cliff,
-conventional commits). Next: merge Bug A/B (`bugfix/pattern-rule-stem-extraction`
-branch, #39), then `-s` flag resolution.
+**v0.2.3 shipped** via `scripts/release.sh patch`. Bug A/B merged,
+placeholder URLs fixed, forbid(unsafe_code) in all 4 crates, pre-push
+ratchet parsing bug fixed. Docs + infra waves complete. Next: P2 hygiene
+(review-*.md session-log cleanup, PLAN epigraph dedup), skeptic audit on
+PLAN/AGENTS/gotchas, then `-s` flag resolution epic.
 
 ---
 

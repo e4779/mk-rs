@@ -8,10 +8,14 @@
 
 ## Current focus
 
-PLAN.md restructuring — slimming from 1380 → ~130 lines. v0.2.2 shipped
-(F-045, F-063, Bug 4); infrastructure landed (hooks, coverage ratchet,
-git-cliff, conventional commits). Next: finish docs, merge Bug A/B
-(`bugfix/pattern-rule-stem-extraction`), then `-s` flag resolution.
+**v0.2.3 shipped** — Bug A/B (pattern-rule stem, & metarule resolution),
+placeholder URLs fixed, `forbid(unsafe_code)` in all 4 crates,
+`scripts/release.sh` code-ified release procedure, pre-push coverage
+ratchet bug fixed (stdin field parsing). Docs + infra waves complete
+(PLAN 1380 → 94 lines, AGENTS ultra-thin 47 lines, gotchas migrated,
+conventional commits + git-cliff CHANGELOG, pre-commit/pre-push hooks).
+Next: P2 hygiene (review-*.md cleanup, epigraph dedup), skeptic audit
+on PLAN/AGENTS/gotchas, then F-003a quoting if it becomes blocking.
 
 ---
 

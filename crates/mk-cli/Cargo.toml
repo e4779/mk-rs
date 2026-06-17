@@ -1,6 +1,6 @@
 [package]
 name = "mk-rs"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 description = "mk-rust CLI: Plan 9 mk compatible command-line tool"
 license = "MIT"
