@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Concrete [`Shell`] implementations for mk-core.
 //!
 //! Provides `ShShell` (POSIX `/bin/sh -ec`), `CustomShell` (user-configurable

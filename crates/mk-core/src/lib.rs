@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! plan9 mk build-tool core library.
 //!
 //! mk-core is a faithful Rust port of Andrew Hume's Plan 9 `mk`. It reads mkfiles,
