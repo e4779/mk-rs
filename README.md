@@ -51,7 +51,7 @@ cargo install mk-rs --features duckscript
 
 Or build from source:
 ```bash
-git clone https://github.com/your-org/mk-rust.git
+git clone https://github.com/e4779/mk-rs.git
 cd mk-rust
 cargo build --release
 cargo install --path crates/mk-cli
@@ -186,7 +186,7 @@ fn main() -> anyhow::Result<()> {
 
 ```bash
 # Requirements: Rust 1.92+ (the `mk-graph` crate depends on `ascii-dag`)
-git clone https://github.com/your-org/mk-rust.git
+git clone https://github.com/e4779/mk-rs.git
 cd mk-rust
 
 # Build (debug)
