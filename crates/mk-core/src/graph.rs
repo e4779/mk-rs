@@ -108,6 +108,12 @@ pub struct Node {
     pub flags: NodeFlags,
     /// Arcs where this node is the TARGET (incoming from prerequisites).
     pub arcs_in: Vec<ArcIndex>,
+    /// Stem extracted from the metarule that matched this target (empty for
+    /// concrete rules or unmatched nodes). Stored on the node — not on arcs —
+    /// so that metarules without prerequisites (e.g. `data/%.toon:` with no
+    /// prereqs, a fetch rule) still expose `$stem` to the recipe. Mirrors
+    /// plan9port mk where the matched stem lives on the node.
+    pub stem: String,
 }
 
 /// A dependency edge: prerequisite → target.
@@ -331,6 +337,7 @@ pub fn build_graph_with_nrep(
             mtime,
             flags: NodeFlags::default(),
             arcs_in: Vec::new(),
+            stem: String::new(),
         });
         name_to_index.insert(name.to_string(), idx);
 
@@ -395,6 +402,14 @@ pub fn build_graph_with_nrep(
                     continue;
                 }
                 if let Some(stem) = match_metarule(name, &metarule.targets[0]) {
+                    // Bug A fix: persist the stem on the node itself, BEFORE
+                    // iterating prereqs. A metarule with no prereqs (e.g.
+                    // `data/%.toon:` — a fetch rule) would previously lose the
+                    // stem because no arc was created to carry it. plan9port mk
+                    // keeps the stem on the node; so do we. `$stem` in the
+                    // recipe reads node.stem via build_recipe fallback.
+                    graph.nodes[idx.0].stem = stem.clone();
+
                     // Compute substituted prereqs for this match
                     let prereqs: Vec<String> = metarule
                         .prereqs
@@ -1134,6 +1149,34 @@ mod tests {
     }
 
     #[test]
+    fn bug_a_metarule_without_prereq_keeps_stem_on_node() {
+        // Bug A regression: a `%` metarule WITHOUT prereqs (e.g. a fetch rule
+        // `data/%.toon:`) used to lose the stem because no arc was created to
+        // carry it — `$stem` expanded to empty in the recipe. plan9port mk
+        // extracts the stem from the target-pattern match regardless of
+        // prereqs; we now store it on the Node.
+        //
+        // Reported via invest-research session 019ed037: pattern rules for
+        // `data/bars/%.toon` silently broke when migrated from explicit
+        // per-target rules; everything kept working only because cached
+        // outputs existed.
+        let input = "data/%.toon:\n\techo $stem > $target\n";
+        let g = graph_from_str(input, &["data/FMMM.toon"]).unwrap();
+        let node = g.nodes.iter().find(|n| n.name == "data/FMMM.toon").unwrap();
+        // No prereqs → no arcs created, but stem MUST be on the node so the
+        // recipe sees `$stem = FMMM`.
+        assert_eq!(
+            node.stem, "FMMM",
+            "metarule without prereq must still capture stem on the node (Bug A)"
+        );
+        assert_eq!(
+            node.arcs_in.len(),
+            0,
+            "metarule without prereq creates no arcs"
+        );
+    }
+
+    #[test]
     fn metarule_match_lib_percent_a() {
         let input = "lib%.a: lib%.o\n";
         let g = graph_from_str(input, &["libfoo.a"]).unwrap();
@@ -1371,18 +1414,21 @@ mod tests {
                     mtime: None,
                     flags: NodeFlags::default(),
                     arcs_in: Vec::new(),
+                    stem: String::new(),
                 },
                 Node {
                     name: "foo.c".into(),
                     mtime: None,
                     flags: NodeFlags::default(),
                     arcs_in: Vec::new(),
+                    stem: String::new(),
                 },
                 Node {
                     name: "foo.s".into(),
                     mtime: None,
                     flags: NodeFlags::default(),
                     arcs_in: Vec::new(),
+                    stem: String::new(),
                 },
             ],
             arcs: vec![

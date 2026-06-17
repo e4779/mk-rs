@@ -170,7 +170,10 @@ fn build_recipe(
         })
         .collect();
 
-    // Extract stem from metarule arc (if any)
+    // Extract stem from metarule arc (if any), falling back to the node's
+    // own stem. The node-level stem matters for metarules WITHOUT prereqs
+    // (e.g. `data/%.toon:` — a fetch rule), where no arc is created to carry
+    // the stem. Bug A: previously `$stem` was empty in such rules.
     let stem = node
         .arcs_in
         .iter()
@@ -182,7 +185,14 @@ fn build_recipe(
                 None
             }
         })
-        .next();
+        .next()
+        .or_else(|| {
+            if node.stem.is_empty() {
+                None
+            } else {
+                Some(node.stem.clone())
+            }
+        });
 
     Recipe {
         target: node.name.clone(),
