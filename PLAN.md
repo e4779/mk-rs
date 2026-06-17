@@ -1,9 +1,5 @@
 # mk-rust: Plan
 
-> *"The Unix philosophy: Write programs that do one thing and do it well."* — Doug McIlroy
->
-> *"Mk is an efficient general tool for describing and maintaining dependencies between files or programs."* — Andrew Hume
-
 ---
 
 ## Current focus
