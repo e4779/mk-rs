@@ -73,7 +73,7 @@
 |----|---------|--------|-------|--------|
 | F-007 | Parallel execution (`$NPROC`) | `sched` | 2 | ✓ |
 | F-037 | `$nproc` variable | `var`, `sched` | 2 | ✓ |
-| F-052 | `-s` flag (sequential) | `cli`, `sched` | 2 | ✓ |
+| F-052 | `-s` flag (sequential) | `cli`, `sched` | 2 | ◐ (conflict: mk-rust `-s` = silent; plan9port `-s` = sequential/NPROC=1. TODO `-s` epic renames silent→`-q`, reserves `-s` for sequential) |
 
 ## Recipe Execution
 
@@ -140,10 +140,10 @@
 
 | Phase | Progress | Feature count | What it covers |
 |-------|:---:|:---:|---|
-| **1a** | ████████ 22/22 ✅ | 22 | Parser, DAG, serial exec, core variables, attrs, scheduling |
-| **1b** | ████████ 12/12 ✅ | 12 | Includes, recipe-time vars, missing intermediates, CLI flags |
-| **2** | ████████ 22/22 ✅ | 22 | %/&/R metarules, NPROC parallel, namelists, pruning, includes |
-| **3** | █████████ 10/10
-| **P3** | ░░░░░░░░ 0/4 | 4 | Plan 9 specifics ($O, membername) |
+| **1a** | ██████░░ 20/26 | 26 | Parser, DAG, serial exec, core vars, attrs, sched (◐5: F-003a, F-009, F-010, F-018, F-025; —1: F-067) |
+| **1b** | █████░░░ 10/15 | 15 | Includes, recipe-time vars, missing intermediates, CLI flags (◐5: F-013, F-023, F-026, F-062, F-063) |
+| **2** | ██████░░ 14/20 | 20 | %/&/R metarules, NPROC parallel, namelists, pruning, includes (◐4: F-024, F-052, F-056, F-060; —2: F-048, F-061) |
+| **3** | █████░░░ 4/7 | 7 | duckscript Shell, archive aggregates, `-d` debug, custom comparison (`P:` attr), polish (◐2: F-050, F-066; —1: F-043) |
+| **P3** | ░░░░░░░░ 0/2 | 2 | Plan 9 specifics (`$O`/`$OBJ`, `membername`) (—2: F-057, F-070) |
 
-*Phase 3: duckscript Shell (from cargo-make research), archive aggregates, -d debug, polish.*
+*Counts derived from the table above. The ◐/— breakdown is listed per phase so the summary cannot silently drift from the rows again — if a row's status changes, the parenthetical must too.*

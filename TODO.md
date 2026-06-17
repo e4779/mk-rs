@@ -10,9 +10,10 @@
 
 **v0.2.3 shipped** via `scripts/release.sh patch`. Bug A/B merged,
 placeholder URLs fixed, forbid(unsafe_code) in all 4 crates, pre-push
-ratchet parsing bug fixed. Docs + infra waves complete. Next: P2 hygiene
-(review-*.md session-log cleanup, PLAN epigraph dedup), skeptic audit on
-PLAN/AGENTS/gotchas, then `-s` flag resolution epic.
+ratchet parsing bug fixed. Docs + infra waves complete and
+skeptic-audited. Next: F-003a quoting (lexer strips quotes in
+non-recipe mode, no corpus usage yet) if blocking, then `-s` flag
+resolution epic (sequential vs silent conflict with plan9port).
 
 ---
 
