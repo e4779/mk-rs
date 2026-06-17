@@ -10,7 +10,8 @@
 
 * **PLAN.md** — constraints (what must hold), decisions (what NOT to
   re-propose — tokio, Rc/RefCell, rc-shell, daemon mode, serde feature-gate),
-  and next milestones. *Семь раз отмерь, один раз отрежь.*
+  and next milestones. *Семь раз отмерь, один раз отрежь* (measure
+  seven times, cut once).
 * **TODO.md** — open work. First unchecked item = next thing to work on.
 * **docs/gotchas.md** — operational traps (recipe opacity, `:V:` attributes,
   `MKSHELL` splitting, glob timing, virtual-staleness). Read before touching
