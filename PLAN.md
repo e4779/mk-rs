@@ -421,111 +421,24 @@ mkfile:
 
 ---
 
-## 6. Open design questions
+## Next milestones
 
-### 6.1 Threading model: crossbeam threads vs tokio async
+Ordered. Concrete, not a wishlist — what we will actually do next.
 
-**Question:** Should parallelism use std::thread via crossbeam channels, or tokio async tasks?
+1. **`-s` flag resolution** (plan9port compat). plan9port `-s` = sequential
+   (force `NPROC=1`); mk-rust `-s` = silent. Rename silent → `-q`, reserve
+   `-s` for sequential. `Q` attribute already handles per-rule silence.
+   Tracked as a TODO epic.
 
-| Approach | Pros | Cons |
-|----------|------|------|
-| **crossbeam threads** | Simple, matches plan9port fork() model. No runtime dependency. Deterministic. Lower compile times. Channels map well to job queue. | Threads are heavier than tasks. 100 targets with NPROC=100 would be 100 threads. |
-| **tokio async** | Lightweight tasks — NPROC=100 is fine. Can use `tokio::process::Command` for recipe execution. `Semaphore` for backpressure. | Adds tokio dependency (~20+ crates). Async I/O is irrelevant for mk (it's CPU-bound fork/exec). Mixing sync File I/O with async can cause issues. |
+2. **Content-hash staleness** (optional `--hash` flag). mtime is the default
+   (matches plan9port + GNU Make); blake3 content hashing as an opt-in for
+   accurate rebuilds (touch-immune, recipe-change detection via `.mk.state`).
+   `P:` attribute already supports custom comparison programs. Demand-driven.
 
-**Background:** plan9port mk uses `fork()`+`exec()`. The Go ports use goroutines. For a Rust port, the job structure is:
-1. Wait for a free slot (semaphore)
-2. Spawn a child process (recipe execution)
-3. Wait for child to exit (blocking)
-4. Signal completion, free slot
-
-This is inherently blocking. Async adds no benefit and adds complexity.
-
-**Tentative answer:** **crossbeam threads.** The parallelism model is a fixed-size thread pool (NPROC threads max), each blocking on `Command::status()`. Simple, fast, no async runtime.
-
----
-
-### 6.2 Graph memory model: arena (Vec + indices) vs Rc/RefCell
-
-**Question:** How to store the DAG where nodes have bidirectional references?
-
-| Approach | Pros | Cons |
-|----------|------|------|
-| **Arena (Vec<Node>, Vec<Arc>, usize indices)** | Contiguous memory, cache-friendly. Clear ownership (Graph owns everything). No Rc cycles. Deterministic drop order. Matches plan9port C model (arrays of structs). | Manual index management. Need to be careful not to hold indices across mutations. `NodeIndex` is just `usize` — no type safety against wrong arena. |
-| **Rc<RefCell<Node>>** | Each node is an independent allocation. Back-references via `Weak`. No index errors. Rust-idiomatic at first glance. | Interior mutability required for graph building → RefCell borrow panics at runtime. Cycles need Weak. Allocation per node. Slower iteration (pointer chasing). |
-
-**Background:** plan9port C uses a linked list of `Node` structs, each with an `Arc*` to its prereqs and a `Node* next` for the rule's target list. The Go ports use `map[string]*Node` with `[]*Edge`. The Rust port should improve on both.
-
-**Tentative answer:** **Arena (Vec + indices).** Use `NodeIndex(usize)` and `ArcIndex(usize)` newtypes for type safety. Graph building is a single phase — after the graph is built, it's immutable (no more mutations). This eliminates the main risk of index invalidation. Benchmarks will confirm if the contiguous layout outperforms pointer chasing (expected: yes, especially for DAG traversal).
-
----
-
-### 6.3 Recipe interpreter: external shell vs embedded duckscript
-
-**Question:** Should recipe execution use an external shell process, or embed a scripting language directly?
-
-| Approach | Pros | Cons |
-|----------|------|------|
-| **External shell (sh/rc)** | Faithful to Plan 9 mk. Users already know sh. No new dependencies. Recipes use existing tools. Simple error model. | Fork/exec per recipe. Environment passing overhead. Platform-specific shell availability. |
-| **Embedded duckscript** | No subprocess — faster. Built-in file ops (cp, mv, glob). Cross-platform (no /bin/sh dependency). Already proven in cargo-make. | Adds a dependency. New syntax for users to learn. Not a real shell — can't run arbitrary binaries without `exec`. |
-| **Hybrid**: use duckscript as an optimization, external shell as default | Best of both. Simple recipes run in-process. Complex recipes (calling gcc, python, R) still use sh. Configurable per rule. | Two code paths. Complexity in shell selection. |
-
-**Background:** The Plan 9 mk philosophy is that recipes are shell scripts. Both `sh` and `rc` are first-class. The `S:` attribute already supports custom interpreters. Duckscript would just be another interpreter.
-
-**Tentative answer:** **External shell as default, duckscript as optional.** `$MKSHELL` defaults to `sh -c`. `S[duckscript]` attribute enables in-process execution for recipes that only need file ops. Feature-gate duckscript behind a Cargo feature flag (`duckscript`). This keeps the core crate lean while offering a performance option.
-
-**cargo-make validation (June 2026):** Confirmed the pattern. duckscript integration is 3 function calls: `Context::new()` → `duckscriptsdk::load()` → `run_script()`. No deep coupling. The `envmnt` crate handles `${VAR}`/`$VAR` expansion (same syntax as Plan 9 mk) and could simplify our var.rs module.
-
----
-
-### 6.4 Staleness detection: mtime vs hash-based
-
-**Question:** Should mk-rust use mtime comparison (like plan9port mk) or content hashing (like knit)?
-
-| Approach | Pros | Cons |
-|----------|------|------|
-| **mtime only** | Fast — just stat() each file. Simple. Standard behavior — matches plan9port mk and GNU Make. | Touch breaks it. Unchanged content triggers rebuilds. Clock skew issues. No recipe-change detection. |
-| **Hash-based (blake3)** | Accurate — only rebuild when content changes. Enables dynamic task elision (if rebuilt prereq produces identical content, dependents skip). Recipe-change triggered rebuilds. | Each build reads every file to compute hash (I/O cost). Slower for large files. Different behavior from Plan 9 mk → compat concern. |
-
-**Background:** GNU Make and plan9port mk use mtime. Knit defaults to hashes. The mtime approach is "good enough" for most use cases. Hash-based is more correct but slower.
-
-**Tentative answer:** **mtime by default, hash-based as an option.** `--hash` flag switches to blake3 content hashing. `P:` attribute (custom comparison) already supports arbitrary staleness logic. Recipe-change tracking can be implemented by hashing the recipe text and storing the hash in `.mk.state` — independent of target file hashing.
-
----
-
-### 6.5 File watching / daemon mode
-
-**Question:** Should mk-rust support a daemon mode that watches files and auto-rebuilds?
-
-| Approach | Pros | Cons |
-|----------|------|------|
-| **Daemon mode (`mk -w` or `mk --watch`)** | Useful for rapid iteration. Matches tools like `fswatch`, `cargo watch`. Could leverage inotify/kqueue for efficiency. | Scope creep. mk is a build tool, not a daemon. Plan 9 mk never had this. Adds complexity (signal handling in threads, file watching dependency). |
-| **Separate tool (`mk-watch`)** | Clean separation. Use `notify` crate for file watching, run `mk` on changes. Single-purpose Unix tool. | Extra binary. Duplication of target resolution logic. |
-| **Don't build it** | Keeps mk-rust focused. Users can script: `while inotifywait .; do mk; done`. | User ergonomics. |
-
-**Tentative answer:** **Don't build it.** mk is a build tool, not a daemon. Plan 9 mk never had this feature. Users who want watch mode can use `watchexec`, `cargo watch`, or a shell one-liner. If demand is high, a separate `mk-watch` tool using the `notify` crate is better than bloating mk-core.
-
-### 6.7 `-s` flag semantic: silent vs sequential
-
-**Conflict:** plan9port mk uses `-s` to mean "sequential" (force NPROC=1). Our implementation uses `-s` to mean "silent" (suppress recipe printing). Phase 2 parallelism makes this a real conflict.
-
-**Options:**
-1. Rename our `-s` to `-q` (quiet) and implement `-s` as sequential in Phase 2
-2. Keep `-s` as silent, use a different flag for sequential (e.g., `-j 1` or just set NPROC=1)
-3. Keep both: `-s` = sequential, silence via `Q` attribute on rules
-
-**Tentative answer:** Option 1. Rename silent to `-q` (quiet), reserve `-s` for sequential mode matching plan9port behavior. The `Q` attribute already handles per-rule silence.
-
----
-
-### 6.6 Cross-platform support: Windows
-
-**Question:** How much effort should go into Windows support?
-
-- Plan 9 mk assumes Unix: `fork()`+`exec()`, `/bin/sh`, symlinks, signal handling
-- The Go ports are Unix-only
-- Rust can be cross-platform, but the effort is non-trivial
-
-**Tentative answer:** **Unix-first, Windows-later.** Phase 1–3 target Linux and macOS. Windows support can be explored as a Phase 4 if there's demand. The `Shell` trait and `std::process::Command` abstractions already provide a path. The main hurdles: no `/bin/sh` by default (would need `cmd.exe` shell), different path separators, no `fork()` semantics for NPROC.
+3. **Windows support** (long-term). Unix-first today (Linux + macOS). The
+   `Shell` trait + `std::process::Command` provide a path; main hurdles: no
+   `/bin/sh` by default (needs `cmd.exe` shell), path separators, no `fork()`
+   for NPROC. Phase 4 if there is demand.
 
 ---
 
