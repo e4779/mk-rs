@@ -44,7 +44,12 @@ footer = """
 conventional_commits = true
 # Keep non-conventional commits (our `release:` and `testdata:` types may
 # confuse the strict parser) — they fall into "Other" via the catch-all parser.
-filter_unconventional = false
+# They DON'T — release:/testdata: match the commit_parsers regex below.
+# Canonical git-cliff mode (matches orhun/git-cliff dogfooding): drop
+# non-conventional from the changelog entirely. They're still in git log;
+# the changelog is a curated view, not a transcript. With our types properly
+# mapped below, every valid mk-rust commit makes it through.
+filter_unconventional = true
 # Split commits on line breaks in body for better grouping
 split_commits = false
 
