@@ -7,11 +7,10 @@
 **v0.2.3 shipped** — Bug A/B (pattern-rule stem, & metarule resolution),
 placeholder URLs fixed, `forbid(unsafe_code)` in all 4 crates,
 `scripts/release.sh` code-ified release procedure, pre-push coverage
-ratchet bug fixed (stdin field parsing). Docs + infra waves complete
-(PLAN 1380 → 94 lines, AGENTS ultra-thin 47 lines, gotchas migrated,
-conventional commits + git-cliff CHANGELOG, pre-commit/pre-push hooks).
-Next: P2 hygiene (review-*.md cleanup, epigraph dedup), skeptic audit
-on PLAN/AGENTS/gotchas, then F-003a quoting if it becomes blocking.
+ratchet bug fixed (stdin field parsing). Docs + infra waves complete and
+skeptic-audited (terminology unified, scars marked, dedup done). Next:
+F-003a quoting (lexer strips quotes in non-recipe mode, TODO #16) if it
+becomes blocking, then `-s` flag resolution epic (TODO).
 
 ---
 
@@ -54,7 +53,8 @@ alternative, reason`.
    (`Command::status()`). `sync::thread::scope` for NPROC-based worker pool.
    Rejected: tokio — ~20 extra deps, async I/O irrelevant for fork/exec.
 
-3. **sh as default shell.** Validated by 9base (also chose sh). Duckscript
+3. **sh as default shell.** Validated by 9base (a plan9port distribution,
+also chose sh). Duckscript
    optional via `MKSHELL=duckscript`; any shell via `MKSHELL=node -e`.
    Rejected: rc — not available by default on Linux/macOS. Duckscript as
    *default* — can't run arbitrary binaries (no gcc/python/R), only built-ins.
