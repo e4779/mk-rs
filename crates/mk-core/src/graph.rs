@@ -348,8 +348,14 @@ pub fn build_graph_with_nrep(
             let expanded_prereqs = expand_globs(&rule.prereqs);
             for prereq in &expanded_prereqs {
                 let prereq_idx = build_node(
-                    graph, rules_by_target, metarules, regex_rules, name_to_index,
-                    nrep, depth, prereq,
+                    graph,
+                    rules_by_target,
+                    metarules,
+                    regex_rules,
+                    name_to_index,
+                    nrep,
+                    depth,
+                    prereq,
                 );
                 let arc_idx = ArcIndex(graph.arcs.len());
                 graph.nodes[idx.0].arcs_in.push(arc_idx);
@@ -369,8 +375,14 @@ pub fn build_graph_with_nrep(
             graph.nodes[idx.0].flags.set(NodeFlags::NO_EXEC);
 
             let member_idx = build_node(
-                graph, rules_by_target, metarules, regex_rules, name_to_index,
-                nrep, depth, &ar.member,
+                graph,
+                rules_by_target,
+                metarules,
+                regex_rules,
+                name_to_index,
+                nrep,
+                depth,
+                &ar.member,
             );
             let arc_idx = ArcIndex(graph.arcs.len());
             graph.nodes[idx.0].arcs_in.push(arc_idx);
@@ -380,7 +392,7 @@ pub fn build_graph_with_nrep(
                 stem: String::new(),
                 is_meta: false,
                 prog: None,
-                line: 0,  // auto-generated (archive member)
+                line: 0, // auto-generated (archive member)
             });
         } else if depth < nrep {
             // No concrete rule, depth allows metarule expansion
@@ -389,9 +401,7 @@ pub fn build_graph_with_nrep(
 
             for metarule in metarules {
                 // F-027: n attribute — skip metarule if target doesn't exist on fs
-                if metarule.attributes.is_no_virtual()
-                    && !std::path::Path::new(name).exists()
-                {
+                if metarule.attributes.is_no_virtual() && !std::path::Path::new(name).exists() {
                     continue;
                 }
                 if let Some(stem) = match_metarule(name, &metarule.targets[0]) {
@@ -409,8 +419,14 @@ pub fn build_graph_with_nrep(
                         }
                         for prereq in &prereqs {
                             let prereq_idx = build_node(
-                                graph, rules_by_target, metarules, regex_rules,
-                                name_to_index, nrep, depth + 1, prereq,
+                                graph,
+                                rules_by_target,
+                                metarules,
+                                regex_rules,
+                                name_to_index,
+                                nrep,
+                                depth + 1,
+                                prereq,
                             );
                             let arc_idx = ArcIndex(graph.arcs.len());
                             graph.nodes[idx.0].arcs_in.push(arc_idx);
@@ -428,10 +444,7 @@ pub fn build_graph_with_nrep(
                     } else {
                         // F-061: subsequent match — check for ambiguity
                         if prereqs != *first_match_prereqs.as_ref().unwrap() {
-                            eprintln!(
-                                "mk: warning: ambiguous rules for target '{}'",
-                                name
-                            );
+                            eprintln!("mk: warning: ambiguous rules for target '{}'", name);
                         }
                     }
                 }
@@ -441,15 +454,17 @@ pub fn build_graph_with_nrep(
             if !matched {
                 for regex_rule in regex_rules {
                     // F-027: n attribute — skip metarule if target doesn't exist on fs
-                    if regex_rule.attributes.is_no_virtual()
-                        && !std::path::Path::new(name).exists()
+                    if regex_rule.attributes.is_no_virtual() && !std::path::Path::new(name).exists()
                     {
                         continue;
                     }
                     let pattern = &regex_rule.targets[0];
                     if let Ok(re) = Regex::new(pattern) {
                         if let Some(caps) = re.captures(name) {
-                            let full_match = caps.get(0).map(|m| m.as_str().to_string()).unwrap_or_default();
+                            let full_match = caps
+                                .get(0)
+                                .map(|m| m.as_str().to_string())
+                                .unwrap_or_default();
 
                             // Apply regex rule attributes
                             if regex_rule.attributes.is_virtual() {
@@ -457,7 +472,9 @@ pub fn build_graph_with_nrep(
                             }
 
                             // Substitute \1, \2, ... in prereqs with capture groups
-                            let prereqs: Vec<String> = regex_rule.prereqs.iter()
+                            let prereqs: Vec<String> = regex_rule
+                                .prereqs
+                                .iter()
                                 .map(|p| {
                                     let mut result = p.clone();
                                     for (i, cap) in caps.iter().enumerate() {
@@ -472,8 +489,14 @@ pub fn build_graph_with_nrep(
 
                             for prereq in &prereqs {
                                 let prereq_idx = build_node(
-                                    graph, rules_by_target, metarules, regex_rules, name_to_index,
-                                    nrep, depth + 1, prereq,
+                                    graph,
+                                    rules_by_target,
+                                    metarules,
+                                    regex_rules,
+                                    name_to_index,
+                                    nrep,
+                                    depth + 1,
+                                    prereq,
                                 );
                                 let arc_idx = ArcIndex(graph.arcs.len());
                                 graph.nodes[idx.0].arcs_in.push(arc_idx);
@@ -498,8 +521,14 @@ pub fn build_graph_with_nrep(
 
     for target in &targets {
         let idx = build_node(
-            &mut graph, &rules_by_target, &metarules, &regex_rules, &mut name_to_index,
-            nrep, 0, target,
+            &mut graph,
+            &rules_by_target,
+            &metarules,
+            &regex_rules,
+            &mut name_to_index,
+            nrep,
+            0,
+            target,
         );
         graph.targets.push(idx);
     }
@@ -514,15 +543,13 @@ pub fn build_graph_with_nrep(
             || metarules
                 .iter()
                 .any(|mr| match_metarule(&node.name, &mr.targets[0]).is_some())
-            || regex_rules
-                .iter()
-                .any(|rr| {
-                    if let Ok(re) = Regex::new(&rr.targets[0]) {
-                        re.is_match(&node.name)
-                    } else {
-                        false
-                    }
-                })
+            || regex_rules.iter().any(|rr| {
+                if let Ok(re) = Regex::new(&rr.targets[0]) {
+                    re.is_match(&node.name)
+                } else {
+                    false
+                }
+            })
             || parse_archive_ref(&node.name).is_some();
         if !has_rule && node.mtime.is_none() {
             return Err(GraphError::NoRule {
@@ -545,10 +572,7 @@ pub fn build_graph_with_nrep(
 /// arcs are pruned.
 fn prune_vacuous(graph: &mut Graph) {
     for node in &mut graph.nodes {
-        let has_concrete = node
-            .arcs_in
-            .iter()
-            .any(|&ai| !graph.arcs[ai.0].is_meta);
+        let has_concrete = node.arcs_in.iter().any(|&ai| !graph.arcs[ai.0].is_meta);
 
         if has_concrete {
             node.arcs_in.retain(|&ai| !graph.arcs[ai.0].is_meta);
@@ -647,7 +671,14 @@ pub fn stale_nodes(graph: &Graph, force_intermediates: bool) -> Vec<NodeIndex> {
     let mut in_result: Vec<bool> = vec![false; n];
 
     for &target_idx in &graph.targets {
-        check_stale(graph, target_idx, &mut memo, &mut result, &mut in_result, force_intermediates);
+        check_stale(
+            graph,
+            target_idx,
+            &mut memo,
+            &mut result,
+            &mut in_result,
+            force_intermediates,
+        );
     }
 
     result
@@ -707,7 +738,14 @@ fn check_stale(
     // added to `result` and memoized (not just the first stale one).
     let mut prereq_stale = false;
     for &arc_idx in &node.arcs_in {
-        if check_stale(graph, graph.arcs[arc_idx.0].from, memo, result, in_result, force_intermediates) {
+        if check_stale(
+            graph,
+            graph.arcs[arc_idx.0].from,
+            memo,
+            result,
+            in_result,
+            force_intermediates,
+        ) {
             prereq_stale = true;
         }
     }
@@ -807,7 +845,11 @@ impl Graph {
         // Write nodes
         for idx in &included {
             let node = &self.nodes[idx.0];
-            let shape = if node.flags.is_virtual() { "ellipse" } else { "box" };
+            let shape = if node.flags.is_virtual() {
+                "ellipse"
+            } else {
+                "box"
+            };
             // Escape label for DOT
             let label = node.name.replace('\\', "\\\\").replace('"', "\\\"");
             out.push_str(&format!(
@@ -975,7 +1017,7 @@ mod tests {
         let prereq_path = dir.join("source.txt");
 
         std::fs::write(&target_path, "old").unwrap();
-        
+
         std::thread::sleep(std::time::Duration::from_millis(10));
         std::fs::write(&prereq_path, "new").unwrap();
 
@@ -1013,28 +1055,38 @@ mod tests {
 
         let input = format!(
             "{}: {} {}\n{}: {}\n{}: {}\n",
-            target_path.display(), a_path.display(), b_path.display(),
-            a_path.display(), c_path.display(),
-            b_path.display(), d_path.display(),
+            target_path.display(),
+            a_path.display(),
+            b_path.display(),
+            a_path.display(),
+            c_path.display(),
+            b_path.display(),
+            d_path.display(),
         );
         let g = graph_from_str(&input, &[&target_path.to_string_lossy()]).unwrap();
         let stale = stale_nodes(&g, false);
 
         // Both a and b should be in the stale set.
-        let names: Vec<&str> = stale.iter().map(|idx| g.nodes[idx.0].name.as_str()).collect();
+        let names: Vec<&str> = stale
+            .iter()
+            .map(|idx| g.nodes[idx.0].name.as_str())
+            .collect();
         assert!(
             names.contains(&a_path.to_str().unwrap()),
-            "a should be stale (c is newer); stale set: {:?}", names
+            "a should be stale (c is newer); stale set: {:?}",
+            names
         );
         assert!(
             names.contains(&b_path.to_str().unwrap()),
-            "b should be stale (d is newer); stale set: {:?}", names
+            "b should be stale (d is newer); stale set: {:?}",
+            names
         );
 
         // target should also be stale since prereqs are stale.
         assert!(
             names.contains(&target_path.to_str().unwrap()),
-            "target should be stale (a and b are stale); stale set: {:?}", names
+            "target should be stale (a and b are stale); stale set: {:?}",
+            names
         );
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -1091,21 +1143,27 @@ mod tests {
         // Without -i: intermediate IS stale (missing file → must be rebuilt)
         let stale = stale_nodes(&g, false);
         assert!(
-            stale.iter().any(|idx| g.nodes[idx.0].name == intermediate.to_string_lossy()),
+            stale
+                .iter()
+                .any(|idx| g.nodes[idx.0].name == intermediate.to_string_lossy()),
             "intermediate should be stale (missing file)"
         );
 
         // With -i (force_intermediates): also stale (same — always rebuild missing)
         let stale_i = stale_nodes(&g, true);
         assert!(
-            stale_i.iter().any(|idx| g.nodes[idx.0].name == intermediate.to_string_lossy()),
+            stale_i
+                .iter()
+                .any(|idx| g.nodes[idx.0].name == intermediate.to_string_lossy()),
             "intermediate should be stale with -i (missing file)"
         );
 
         // With -i: intermediate should be forced stale
         let stale_i = stale_nodes(&g, true);
         assert!(
-            stale_i.iter().any(|idx| g.nodes[idx.0].name == intermediate.to_string_lossy()),
+            stale_i
+                .iter()
+                .any(|idx| g.nodes[idx.0].name == intermediate.to_string_lossy()),
             "intermediate should be stale when force_intermediates=true"
         );
 
@@ -1291,13 +1349,14 @@ mod tests {
         // The n flag on the metarule checks whether the target exists
         // Here: %.o:n: %.c — n means the metarule only applies if target exists on fs
         // hello.o doesn't exist, so the metarule should NOT match
-        let input = format!(
-            "%.o:n: %.c\nprog: {}\n",
-            o_path.display()
-        );
+        let input = format!("%.o:n: %.c\nprog: {}\n", o_path.display());
         let g = graph_from_str(&input, &["prog"]).unwrap();
         // hello.o node should have no arcs (metarule skipped due to n flag + target not on fs)
-        let o_node = g.nodes.iter().find(|n| n.name == o_path.to_string_lossy()).unwrap();
+        let o_node = g
+            .nodes
+            .iter()
+            .find(|n| n.name == o_path.to_string_lossy())
+            .unwrap();
         assert!(o_node.arcs_in.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1311,7 +1370,10 @@ mod tests {
         let g = graph_from_str(input, &["prog"]).unwrap();
         // prog depends on ghost.o, but ghost.o got no metarule match
         let ghost = g.nodes.iter().find(|n| n.name == "ghost.o").unwrap();
-        assert!(ghost.arcs_in.is_empty(), "n: metarule should be skipped for non-existent ghost.o");
+        assert!(
+            ghost.arcs_in.is_empty(),
+            "n: metarule should be skipped for non-existent ghost.o"
+        );
     }
 
     #[test]
@@ -1518,7 +1580,11 @@ mod tests {
         // Build graph directly for lib.a(foo.o)
         let g = graph_from_str("", &["lib.a(foo.o)"]).unwrap();
         assert_eq!(g.nodes.len(), 2);
-        let archive_idx = g.nodes.iter().position(|n| n.name == "lib.a(foo.o)").unwrap();
+        let archive_idx = g
+            .nodes
+            .iter()
+            .position(|n| n.name == "lib.a(foo.o)")
+            .unwrap();
         assert_eq!(g.nodes[archive_idx].arcs_in.len(), 1);
         let member_idx = g.arcs[g.nodes[archive_idx].arcs_in[0].0].from;
         assert_eq!(g.nodes[member_idx.0].name, "foo.o");
@@ -1619,7 +1685,10 @@ mod tests {
         );
         let g = graph_from_str(&input, &[&target_path.to_string_lossy()]).unwrap();
         let stale = stale_nodes(&g, false);
-        assert!(stale.is_empty(), "target should be up-to-date via P program");
+        assert!(
+            stale.is_empty(),
+            "target should be up-to-date via P program"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1647,7 +1716,9 @@ mod tests {
         let g = graph_from_str(&input, &[&target_path.to_string_lossy()]).unwrap();
         let stale = stale_nodes(&g, false);
         assert!(
-            stale.iter().any(|idx| g.nodes[idx.0].name == target_path.to_string_lossy()),
+            stale
+                .iter()
+                .any(|idx| g.nodes[idx.0].name == target_path.to_string_lossy()),
             "target should be stale via P program returning non-zero"
         );
 
@@ -1667,7 +1738,10 @@ mod tests {
         let g = graph_from_str("clean:V:\n\trm -f *.o\n", &["clean"]).unwrap();
         let stale = stale_nodes(&g, false);
         let clean_idx = g.nodes.iter().position(|n| n.name == "clean").unwrap();
-        assert!(stale.contains(&NodeIndex(clean_idx)), "virtual target with no prereqs must always be stale");
+        assert!(
+            stale.contains(&NodeIndex(clean_idx)),
+            "virtual target with no prereqs must always be stale"
+        );
     }
 
     #[test]
@@ -1719,17 +1793,28 @@ mod tests {
 
         let input = format!(
             "{}: {}\n\tprocess\n{}: {}\n\tanalyze\n",
-            intermediate.display(), source.display(),
-            report.display(), intermediate.display(),
+            intermediate.display(),
+            source.display(),
+            report.display(),
+            intermediate.display(),
         );
         // Delete intermediate — should trigger rebuild of intermediate AND report
         std::fs::remove_file(&intermediate).unwrap();
 
         let g = graph_from_str(&input, &[&report.to_string_lossy()]).unwrap();
         let stale = stale_nodes(&g, false);
-        let names: Vec<&str> = stale.iter().map(|idx| g.nodes[idx.0].name.as_str()).collect();
-        assert!(names.contains(&intermediate.to_str().unwrap()), "intermediate should be stale (was deleted)");
-        assert!(names.contains(&report.to_str().unwrap()), "report should be stale (depends on deleted intermediate)");
+        let names: Vec<&str> = stale
+            .iter()
+            .map(|idx| g.nodes[idx.0].name.as_str())
+            .collect();
+        assert!(
+            names.contains(&intermediate.to_str().unwrap()),
+            "intermediate should be stale (was deleted)"
+        );
+        assert!(
+            names.contains(&report.to_str().unwrap()),
+            "report should be stale (depends on deleted intermediate)"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1748,18 +1833,20 @@ mod tests {
         let g = graph_from_str(&input, &["target"]).unwrap();
 
         // *.json expands to a.json and b.json, not c.txt or literal *.json
-        let prereqs: Vec<&str> = g.nodes.iter()
+        let prereqs: Vec<&str> = g
+            .nodes
+            .iter()
             .filter(|n| n.name == "target")
             .flat_map(|n| n.arcs_in.iter())
             .map(|&ai| g.arcs[ai.0].from)
             .map(|idx| g.nodes[idx.0].name.as_str())
             .collect();
         // Should match a.json and b.json, not c.txt or literal *.json
-        assert!(prereqs.contains(&dir.join("a.json").to_str().unwrap()),
-            "glob should expand to a.json");
+        assert!(
+            prereqs.contains(&dir.join("a.json").to_str().unwrap()),
+            "glob should expand to a.json"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
-
 }
-

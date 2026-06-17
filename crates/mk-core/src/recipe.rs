@@ -185,7 +185,9 @@ pub fn run(
     let result = shell
         .execute(&script, &env, &recipe.working_dir)
         .map_err(|e| match e {
-            ShellError::CommandFailed { code, stderr } => RecipeError::CommandFailed { code, stderr },
+            ShellError::CommandFailed { code, stderr } => {
+                RecipeError::CommandFailed { code, stderr }
+            }
             ShellError::ShellNotFound { .. } => RecipeError::Io(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 e.to_string(),
@@ -707,10 +709,7 @@ mod tests {
         run(&recipe, &shell, &RecipeOptions::default()).unwrap();
         let env = shell.last_env.lock().unwrap();
         assert_eq!(env.get("target").map(|s| s.as_str()), Some("hello"));
-        assert_eq!(
-            env.get("prereq").map(|s| s.as_str()),
-            Some("hello.c")
-        );
+        assert_eq!(env.get("prereq").map(|s| s.as_str()), Some("hello.c"));
         assert!(
             env.get("pid")
                 .map(|s| s.parse::<u32>().is_ok())
@@ -748,10 +747,7 @@ mod tests {
         run(&recipe, &shell, &RecipeOptions::default()).unwrap();
         let env = shell.last_env.lock().unwrap();
         assert!(env.contains_key("newprereq"));
-        assert_eq!(
-            env.get("newprereq").map(|s| s.as_str()),
-            Some("hello.c")
-        );
+        assert_eq!(env.get("newprereq").map(|s| s.as_str()), Some("hello.c"));
     }
 
     #[test]
@@ -790,10 +786,7 @@ mod tests {
         };
         run(&recipe, &shell, &RecipeOptions::default()).unwrap();
         let env = shell.last_env.lock().unwrap();
-        assert_eq!(
-            env.get("newmember").map(|s| s.as_str()),
-            Some("")
-        );
+        assert_eq!(env.get("newmember").map(|s| s.as_str()), Some(""));
     }
 
     #[test]
@@ -827,10 +820,7 @@ mod tests {
         let recipe = make_recipe();
         run(&recipe, &shell, &RecipeOptions::default()).unwrap();
         let env = shell.last_env.lock().unwrap();
-        assert_eq!(
-            env.get("alltarget").map(|s| s.as_str()),
-            Some("hello")
-        );
+        assert_eq!(env.get("alltarget").map(|s| s.as_str()), Some("hello"));
     }
 
     // ── $$ escape tests ────────────────────────────────────────────────

@@ -33,12 +33,15 @@
 
 use crate::attr::Attributes;
 use crate::error::SchedError;
-use crate::graph::{Graph, NodeIndex, stale_nodes};
-use crate::recipe::{Recipe, RecipeOptions, run as run_recipe};
-use crate::shell::{Shell};
+use crate::graph::{stale_nodes, Graph, NodeIndex};
+use crate::recipe::{run as run_recipe, Recipe, RecipeOptions};
+use crate::shell::Shell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 
 // ── Outcome ────────────────────────────────────────────────────────────────
 
@@ -223,10 +226,7 @@ pub fn execute(
     let sorted = topological_sort(graph, &graph.targets);
     for &node_idx in &sorted {
         let node = &graph.nodes[node_idx.0];
-        if !stale_set.contains(&node_idx.0)
-            && !node.flags.is_virtual()
-            && node.mtime.is_none()
-        {
+        if !stale_set.contains(&node_idx.0) && !node.flags.is_virtual() && node.mtime.is_none() {
             stale_set.insert(node_idx.0);
         }
     }
@@ -261,7 +261,15 @@ pub fn execute(
 
     if nproc > 1 {
         return run_parallel(
-            graph, &sorted, &stale_set, rules, shell, working_dir, env, opts, nproc,
+            graph,
+            &sorted,
+            &stale_set,
+            rules,
+            shell,
+            working_dir,
+            env,
+            opts,
+            nproc,
         );
     }
 
@@ -297,7 +305,9 @@ pub fn execute(
                 .unwrap_or(false);
             if !has_recipe {
                 built.push(node.name.clone());
-                graph.nodes[node_idx.0].flags.set(crate::graph::NodeFlags::MADE);
+                graph.nodes[node_idx.0]
+                    .flags
+                    .set(crate::graph::NodeFlags::MADE);
                 continue;
             }
         }
@@ -324,7 +334,9 @@ pub fn execute(
         match run_recipe(&recipe, shell, &recipe_opts) {
             Ok(_result) => {
                 built.push(node.name.clone());
-                graph.nodes[node_idx.0].flags.set(crate::graph::NodeFlags::MADE);
+                graph.nodes[node_idx.0]
+                    .flags
+                    .set(crate::graph::NodeFlags::MADE);
             }
             Err(e) => {
                 let msg = e.to_string();
@@ -408,8 +420,7 @@ fn run_parallel(
     let built: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let unchanged: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let failed: Arc<Mutex<Vec<(String, String)>>> = Arc::new(Mutex::new(Vec::new()));
-    let remaining: Arc<Mutex<HashMap<usize, usize>>> =
-        Arc::new(Mutex::new(HashMap::new()));
+    let remaining: Arc<Mutex<HashMap<usize, usize>>> = Arc::new(Mutex::new(HashMap::new()));
     let cancelled: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
 
     // Compute initial ready set and pending prerequisite counts
@@ -489,7 +500,11 @@ fn run_parallel(
                                         true
                                     } else {
                                         let recipe = build_recipe(
-                                            graph_ref, node_idx, rule, working_dir, env,
+                                            graph_ref,
+                                            node_idx,
+                                            rule,
+                                            working_dir,
+                                            env,
                                         );
                                         match run_recipe(&recipe, shell, recipe_opts_ref) {
                                             Ok(_) => {
@@ -498,10 +513,7 @@ fn run_parallel(
                                             }
                                             Err(e) => {
                                                 let msg = e.to_string();
-                                                failed
-                                                    .lock()
-                                                    .unwrap()
-                                                    .push((name.clone(), msg));
+                                                failed.lock().unwrap().push((name.clone(), msg));
                                                 if opts.keep_going {
                                                     // -k: mark dependents as failed too
                                                     false
@@ -588,7 +600,7 @@ fn run_parallel(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::{Graph, build_graph};
+    use crate::graph::{build_graph, Graph};
     use crate::lex::{tokenize, ShellMode};
     use crate::parse;
     use crate::shell::ShellResult;
@@ -641,10 +653,7 @@ mod tests {
     // ── Test helpers ───────────────────────────────────────────────────
 
     /// Parse a mkfile string and build a graph + rules map.
-    fn build_from_mkfile(
-        mkfile: &str,
-        target: &str,
-    ) -> (Graph, HashMap<String, ResolvedRule>) {
+    fn build_from_mkfile(mkfile: &str, target: &str) -> (Graph, HashMap<String, ResolvedRule>) {
         let tokens = tokenize(mkfile, ShellMode::Sh).unwrap();
         let stmts = parse::parse(&tokens).unwrap();
         let graph = build_graph(&stmts, &[target.to_string()]).unwrap();
@@ -671,8 +680,7 @@ mod tests {
 
     #[test]
     fn execute_single_target() {
-        let (mut graph, rules) =
-            build_from_mkfile("hello:\n\techo hello\n", "hello");
+        let (mut graph, rules) = build_from_mkfile("hello:\n\techo hello\n", "hello");
         let shell = TestShell;
         let outcome = execute(
             &mut graph,
@@ -688,8 +696,7 @@ mod tests {
 
     #[test]
     fn execute_no_exec() {
-        let (mut graph, rules) =
-            build_from_mkfile("target:\n\techo hello\n", "target");
+        let (mut graph, rules) = build_from_mkfile("target:\n\techo hello\n", "target");
         let shell = TestShell;
         let opts = SchedOptions {
             no_exec: true,
@@ -735,8 +742,10 @@ mod tests {
         let mkfile = "target: a b\na: leaf1\nb: leaf2\n";
         let (graph, _rules) = build_from_mkfile(mkfile, "target");
         let sorted = topological_sort(&graph, &graph.targets);
-        let names: Vec<&str> =
-            sorted.iter().map(|i| graph.nodes[i.0].name.as_str()).collect();
+        let names: Vec<&str> = sorted
+            .iter()
+            .map(|i| graph.nodes[i.0].name.as_str())
+            .collect();
         let target_pos = names.iter().position(|&n| n == "target").unwrap();
         let a_pos = names.iter().position(|&n| n == "a").unwrap();
         let leaf1_pos = names.iter().position(|&n| n == "leaf1").unwrap();
@@ -811,11 +820,7 @@ mod tests {
     fn build_recipe_populates_prereqs() {
         let mkfile = "target: a b\n\techo build\n";
         let (graph, rules) = build_from_mkfile(mkfile, "target");
-        let target_idx = graph
-            .targets
-            .first()
-            .copied()
-            .unwrap();
+        let target_idx = graph.targets.first().copied().unwrap();
         let rule = rules.get("target").unwrap();
         let recipe = build_recipe(
             &graph,
@@ -860,13 +865,7 @@ mod tests {
             .map(NodeIndex)
             .unwrap();
         let rule = rules.get("a").unwrap();
-        let recipe = build_recipe(
-            &graph,
-            a_idx,
-            rule,
-            &PathBuf::from("."),
-            &HashMap::new(),
-        );
+        let recipe = build_recipe(&graph, a_idx, rule, &PathBuf::from("."), &HashMap::new());
         assert_eq!(recipe.target, "a");
         assert_eq!(recipe.all_targets, vec!["a", "b"]);
     }
@@ -887,8 +886,10 @@ mod tests {
         let mkfile = "a: b\nb: c\nc:\n";
         let (graph, _rules) = build_from_mkfile(mkfile, "a");
         let sorted = topological_sort(&graph, &graph.targets);
-        let names: Vec<&str> =
-            sorted.iter().map(|i| graph.nodes[i.0].name.as_str()).collect();
+        let names: Vec<&str> = sorted
+            .iter()
+            .map(|i| graph.nodes[i.0].name.as_str())
+            .collect();
         // c should be first, then b, then a
         let c_pos = names.iter().position(|&n| n == "c").unwrap();
         let b_pos = names.iter().position(|&n| n == "b").unwrap();
@@ -902,8 +903,10 @@ mod tests {
         let mkfile = "a: b c\nb: d\nc: d\nd:\n";
         let (graph, _rules) = build_from_mkfile(mkfile, "a");
         let sorted = topological_sort(&graph, &graph.targets);
-        let names: Vec<&str> =
-            sorted.iter().map(|i| graph.nodes[i.0].name.as_str()).collect();
+        let names: Vec<&str> = sorted
+            .iter()
+            .map(|i| graph.nodes[i.0].name.as_str())
+            .collect();
         let d_pos = names.iter().position(|&n| n == "d").unwrap();
         let b_pos = names.iter().position(|&n| n == "b").unwrap();
         let c_pos = names.iter().position(|&n| n == "c").unwrap();
@@ -920,8 +923,7 @@ mod tests {
 
     #[test]
     fn node_marked_made_after_successful_build() {
-        let (mut graph, rules) =
-            build_from_mkfile("target:\n\techo ok\n", "target");
+        let (mut graph, rules) = build_from_mkfile("target:\n\techo ok\n", "target");
         let shell = TestShell;
         let _ = execute(
             &mut graph,
@@ -1137,7 +1139,8 @@ mod tests {
         // all:V: fetch-all analyze — fetch-all depends on x, analyze depends on y
         // BOTH x and y should be built
         // Regression: short-circuit any() bug in stale_nodes()
-        let mkfile = "all:V: fetch-all analyze\nfetch-all:V: x\nanalyze:V: y\nx:\n\techo x\ny:\n\techo y\n";
+        let mkfile =
+            "all:V: fetch-all analyze\nfetch-all:V: x\nanalyze:V: y\nx:\n\techo x\ny:\n\techo y\n";
         let (mut graph, rules) = build_from_mkfile(mkfile, "all");
         let shell = TestShell;
         let outcome = execute(
@@ -1147,9 +1150,16 @@ mod tests {
             &PathBuf::from("."),
             &HashMap::new(),
             &SchedOptions::default(),
-        ).unwrap();
-        assert!(outcome.built.contains(&"x".to_string()), "x should be built");
-        assert!(outcome.built.contains(&"y".to_string()), "y should be built");
+        )
+        .unwrap();
+        assert!(
+            outcome.built.contains(&"x".to_string()),
+            "x should be built"
+        );
+        assert!(
+            outcome.built.contains(&"y".to_string()),
+            "y should be built"
+        );
     }
 
     #[test]
@@ -1173,9 +1183,15 @@ mod tests {
         )
         .unwrap();
         // a should still build despite b's failure (E attribute)
-        assert!(outcome.built.contains(&"a".to_string()), "a should build despite b's E failure");
+        assert!(
+            outcome.built.contains(&"a".to_string()),
+            "a should build despite b's E failure"
+        );
         // b should be in the failed list
-        assert!(outcome.failed.iter().any(|(t, _)| t == "b"), "b should be in failed list");
+        assert!(
+            outcome.failed.iter().any(|(t, _)| t == "b"),
+            "b should be in failed list"
+        );
     }
 
     #[test]
@@ -1206,6 +1222,9 @@ mod tests {
             "c should build (dependent of E-attributed target should not be marked failed)"
         );
         // b should be in the failed list
-        assert!(outcome.failed.iter().any(|(t, _)| t == "b"), "b should be in failed list");
+        assert!(
+            outcome.failed.iter().any(|(t, _)| t == "b"),
+            "b should be in failed list"
+        );
     }
 }

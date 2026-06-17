@@ -190,7 +190,11 @@ mod tests {
         let mut ctx = IncludeContext::new();
         let mut scope = Scope::new();
         let stmts = ctx
-            .include_file(included.to_str().unwrap(), &std::env::temp_dir(), &mut scope)
+            .include_file(
+                included.to_str().unwrap(),
+                &std::env::temp_dir(),
+                &mut scope,
+            )
             .unwrap();
         assert_eq!(stmts.len(), 1);
     }
@@ -224,7 +228,8 @@ mod tests {
         let dir = std::env::temp_dir().join("mk_test_include");
         let mut ctx = IncludeContext::new();
         let mut scope = Scope::new();
-        ctx.include_file(path.to_str().unwrap(), &dir, &mut scope).unwrap();
+        ctx.include_file(path.to_str().unwrap(), &dir, &mut scope)
+            .unwrap();
         assert!(ctx.chain.is_empty());
     }
 
@@ -251,12 +256,20 @@ mod tests {
         let mut scope = Scope::new();
 
         // First include of D — should succeed and parse the content.
-        let stmts1 = ctx.include_file(d.to_str().unwrap(), &dir, &mut scope).unwrap();
-        assert_eq!(stmts1.len(), 1, "first include of D should return statement");
+        let stmts1 = ctx
+            .include_file(d.to_str().unwrap(), &dir, &mut scope)
+            .unwrap();
+        assert_eq!(
+            stmts1.len(),
+            1,
+            "first include of D should return statement"
+        );
         assert!(ctx.seen.len() == 1, "D should be in seen set");
 
         // Second include of D (from another branch) — should return empty.
-        let stmts2 = ctx.include_file(d.to_str().unwrap(), &dir, &mut scope).unwrap();
+        let stmts2 = ctx
+            .include_file(d.to_str().unwrap(), &dir, &mut scope)
+            .unwrap();
         assert!(stmts2.is_empty(), "second include of D should be empty");
     }
 
@@ -268,7 +281,8 @@ mod tests {
         let mut ctx = IncludeContext::new();
         let mut scope = Scope::new();
 
-        ctx.include_file(d.to_str().unwrap(), &dir, &mut scope).unwrap();
+        ctx.include_file(d.to_str().unwrap(), &dir, &mut scope)
+            .unwrap();
         assert!(ctx.chain.is_empty(), "chain should be empty after include");
         // D should still be marked as seen.
         assert!(ctx.seen.len() == 1, "seen set should contain D");
@@ -280,7 +294,11 @@ mod tests {
         let mut ctx = IncludeContext::new();
         let mut scope = Scope::new();
         let stmts = ctx
-            .include_file(path.to_str().unwrap(), &PathBuf::from("/unused"), &mut scope)
+            .include_file(
+                path.to_str().unwrap(),
+                &PathBuf::from("/unused"),
+                &mut scope,
+            )
             .unwrap();
         assert_eq!(stmts.len(), 1);
     }
@@ -340,7 +358,9 @@ mod tests {
 
         let mut ctx = IncludeContext::new();
         let mut scope = Scope::new();
-        let stmts = ctx.include_file("sub/child.mk", &parent_dir, &mut scope).unwrap();
+        let stmts = ctx
+            .include_file("sub/child.mk", &parent_dir, &mut scope)
+            .unwrap();
         assert_eq!(stmts.len(), 1);
     }
 
@@ -383,7 +403,11 @@ mod tests {
         let mut ctx = IncludeContext::new();
         let mut scope = Scope::new();
         let stmts = ctx
-            .include_command("echo 'TARGET = value'", &std::env::current_dir().unwrap(), &mut scope)
+            .include_command(
+                "echo 'TARGET = value'",
+                &std::env::current_dir().unwrap(),
+                &mut scope,
+            )
             .unwrap();
         assert_eq!(stmts.len(), 1);
         match &stmts[0] {
@@ -399,8 +423,7 @@ mod tests {
     fn include_command_failed() {
         let mut ctx = IncludeContext::new();
         let mut scope = Scope::new();
-        let result =
-            ctx.include_command("exit 1", &std::env::current_dir().unwrap(), &mut scope);
+        let result = ctx.include_command("exit 1", &std::env::current_dir().unwrap(), &mut scope);
         assert!(matches!(result, Err(IncludeError::CommandFailed { .. })));
     }
 
@@ -439,9 +462,7 @@ mod tests {
         let mut scope = Scope::new();
         scope.set_raw("INCL", file_name, Precedence::Mkfile);
 
-        let stmts = ctx
-            .include_file("$INCL", parent_dir, &mut scope)
-            .unwrap();
+        let stmts = ctx.include_file("$INCL", parent_dir, &mut scope).unwrap();
         assert_eq!(stmts.len(), 1);
     }
 

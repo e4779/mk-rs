@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# mk-rust pre-commit hook — FAST tier (target <30s per commit).
+#
+# Verifies, in order of increasing cost:
+#   1. cargo fmt --check          (instant — formatting only)
+#   2. cargo clippy -D warnings   (5-10s — lints, must be clean)
+#   3. cargo test --workspace     (10-30s — full test suite)
+#
+# Slow checks (coverage ratchet, doc-freshness) live in CI / pre-push,
+# NOT here — see CONTRIBUTING.md "Tiered gates" and task #36.
+#
+# Install:  git config core.hooksPath .githooks
+# Bypass (emergency only):  git commit --no-verify
+# Verbose:  CARGO_HOOKS_VERBOSE=1 git commit ...
+
+# shellcheck source=./_common.sh
+. "$(dirname "$0")/_common.sh"
+
+ROOT="$(ws_root)"
+QUIET="$(cargo_quiet_flags)"
+
+# --- Skip for merge commits (no code changes to validate) ----------------
+# During a merge-in-progress the index is in a special state; running the
+# full gate is noisy and rarely useful. Skip silently.
+if [ -f "$ROOT/.git/MERGE_HEAD" ]; then
+    exit 0
+fi
+
+# --- Optimization: skip when no Rust/lockfile changes are staged ---------
+# `git diff --cached --name-only` is cheap; if only docs/markdown changed,
+# cargo gates would just waste 20+ seconds.
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
+if ! echo "$STAGED" | grep -qE '\.(rs|toml)$|^(Cargo\.lock|cliff\.toml)$'; then
+    log_info "no Rust/Cargo changes staged — skipping cargo gates"
+    exit 0
+fi
+
+section "pre-commit: mk-rust fast gates"
+
+# --- 1. cargo fmt --check -------------------------------------------------
+log_info "checking formatting (cargo fmt --check)"
+if ! (cd "$ROOT" && cargo fmt --check); then
+    log_fail "formatting check failed"
+    log_info "fix with: cargo fmt --all"
+    hook_die
+fi
+log_pass "formatting clean"
+
+# --- 2. cargo clippy ------------------------------------------------------
+log_info "running clippy (cargo clippy --all-targets --all-features -- -D warnings)"
+if ! (cd "$ROOT" && cargo clippy --all-targets --all-features $QUIET -- -D warnings); then
+    log_fail "clippy found issues"
+    log_info "fix with: cargo clippy --all-targets --all-features --fix"
+    hook_die
+fi
+log_pass "clippy clean"
+
+# --- 3. cargo test --------------------------------------------------------
+log_info "running tests (cargo test --workspace)"
+if ! (cd "$ROOT" && cargo test --workspace $QUIET); then
+    log_fail "tests failed"
+    hook_die
+fi
+log_pass "tests green"
+
+section "all fast gates passed"
+exit 0

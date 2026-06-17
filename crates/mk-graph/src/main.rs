@@ -82,21 +82,23 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     // Read mkfile
-    let text = std::fs::read_to_string(&cli.file)
-        .map_err(|e| format!("{}: {}", cli.file.display(), e))?;
+    let text =
+        std::fs::read_to_string(&cli.file).map_err(|e| format!("{}: {}", cli.file.display(), e))?;
 
     // Parse
     let tokens = tokenize(&text, ShellMode::Sh)?;
     let stmts = parse::parse(&tokens)?;
 
     // Build recipe lookup: target_name → recipe_text
-    let recipes: HashMap<String, String> = stmts.iter()
+    let recipes: HashMap<String, String> = stmts
+        .iter()
         .filter_map(|s| if let Stmt::Rule(r) = s { Some(r) } else { None })
         .filter_map(|r| r.recipe.clone().map(|rec| (r.targets[0].clone(), rec)))
         .collect();
 
     // Build graph with all concrete targets
-    let target_names: Vec<String> = stmts.iter()
+    let target_names: Vec<String> = stmts
+        .iter()
         .filter_map(|s| if let Stmt::Rule(r) = s { Some(r) } else { None })
         .flat_map(|r| r.targets.iter().cloned())
         .filter(|t| !t.contains('%') && !t.contains('&'))
@@ -183,15 +185,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 /// consumed (never appear as `from` in any edge). These are "output-only"
 /// nodes — they exist in the graph but nothing depends on them.
 fn find_dead_ends(graph: &graph::Graph) -> Vec<String> {
-    let consumed: HashSet<graph::NodeIndex> = graph.arcs.iter()
-        .map(|a| a.from)
-        .collect();
+    let consumed: HashSet<graph::NodeIndex> = graph.arcs.iter().map(|a| a.from).collect();
 
-    let produced: HashSet<graph::NodeIndex> = graph.arcs.iter()
-        .map(|a| a.to)
-        .collect();
+    let produced: HashSet<graph::NodeIndex> = graph.arcs.iter().map(|a| a.to).collect();
 
-    produced.difference(&consumed)
+    produced
+        .difference(&consumed)
         .map(|idx| graph.nodes[idx.0].name.clone())
         .collect()
 }
@@ -202,16 +201,13 @@ fn find_dead_ends(graph: &graph::Graph) -> Vec<String> {
 /// are never produced (never appear as `to` in any edge) and have no mtime.
 /// These are inputs that don't exist and can't be built.
 fn find_orphans(graph: &graph::Graph) -> Vec<String> {
-    let produced: HashSet<graph::NodeIndex> = graph.arcs.iter()
-        .map(|a| a.to)
-        .collect();
+    let produced: HashSet<graph::NodeIndex> = graph.arcs.iter().map(|a| a.to).collect();
 
-    let needed: HashSet<graph::NodeIndex> = graph.arcs.iter()
-        .map(|a| a.from)
-        .collect();
+    let needed: HashSet<graph::NodeIndex> = graph.arcs.iter().map(|a| a.from).collect();
 
     // Orphan: needed as prereq, never produced, not on disk
-    needed.difference(&produced)
+    needed
+        .difference(&produced)
         .filter(|idx| graph.nodes[idx.0].mtime.is_none())
         .map(|idx| graph.nodes[idx.0].name.clone())
         .collect()
@@ -243,7 +239,10 @@ fn to_ascii(graph: &graph::Graph, scope: GraphScope, root: Option<&str>) -> Stri
     let mut dag = ascii_dag::Graph::new();
     // Node/edge labels are owned here and outlive `dag`. ascii-dag borrows them
     // via &'a str, so we materialize strings before construction.
-    let node_labels: Vec<Option<String>> = graph.nodes.iter().enumerate()
+    let node_labels: Vec<Option<String>> = graph
+        .nodes
+        .iter()
+        .enumerate()
         .map(|(i, n)| {
             if included.contains(&graph::NodeIndex(i)) {
                 Some(if n.flags.is_virtual() {
@@ -256,7 +255,9 @@ fn to_ascii(graph: &graph::Graph, scope: GraphScope, root: Option<&str>) -> Stri
             }
         })
         .collect();
-    let edge_labels: Vec<String> = graph.arcs.iter()
+    let edge_labels: Vec<String> = graph
+        .arcs
+        .iter()
         .map(|a| edge_label(a).unwrap_or_default())
         .collect();
 
@@ -267,7 +268,11 @@ fn to_ascii(graph: &graph::Graph, scope: GraphScope, root: Option<&str>) -> Stri
     }
     for (i, arc) in graph.arcs.iter().enumerate() {
         if node_labels[arc.from.0].is_some() && node_labels[arc.to.0].is_some() {
-            let lbl = if edge_labels[i].is_empty() { None } else { Some(edge_labels[i].as_str()) };
+            let lbl = if edge_labels[i].is_empty() {
+                None
+            } else {
+                Some(edge_labels[i].as_str())
+            };
             dag.add_edge(arc.from.0, arc.to.0, lbl);
         }
     }
@@ -344,9 +349,7 @@ fn edge_label(arc: &graph::Arc) -> Option<String> {
 /// Escape a label for Mermaid: wrap in quotes if it contains special chars.
 /// Mermaid treats `[`, `]`, `(`, `)`, `{`, `}`, `"` as syntax.
 fn mermaid_escape(s: &str) -> String {
-    let needs_quote = s.contains(|c: char| {
-        matches!(c, '[' | ']' | '(' | ')' | '{' | '}' | '"' | ' ')
-    });
+    let needs_quote = s.contains(['[', ']', '(', ')', '{', '}', '"', ' ']);
     if needs_quote {
         format!("\"{}\"", s.replace('"', "#quot;"))
     } else {
@@ -357,7 +360,12 @@ fn mermaid_escape(s: &str) -> String {
 // ── JSON export ──────────────────────────────────────────────────────────
 
 /// Export graph as JSON with stage heuristic and recipe text.
-fn to_json(graph: &graph::Graph, recipes: &HashMap<String, String>, scope: GraphScope, root: Option<&str>) -> String {
+fn to_json(
+    graph: &graph::Graph,
+    recipes: &HashMap<String, String>,
+    scope: GraphScope,
+    root: Option<&str>,
+) -> String {
     let included: HashSet<graph::NodeIndex> = match scope {
         GraphScope::All => (0..graph.nodes.len()).map(graph::NodeIndex).collect(),
         GraphScope::Subgraph => {
@@ -374,10 +382,17 @@ fn to_json(graph: &graph::Graph, recipes: &HashMap<String, String>, scope: Graph
         }
     };
 
-    let nodes: Vec<serde_json::Value> = graph.nodes.iter().enumerate()
+    let nodes: Vec<serde_json::Value> = graph
+        .nodes
+        .iter()
+        .enumerate()
         .filter(|(i, _)| included.contains(&graph::NodeIndex(*i)))
         .map(|(_, node)| {
-            let kind = if node.flags.is_virtual() { "virtual" } else { "file" };
+            let kind = if node.flags.is_virtual() {
+                "virtual"
+            } else {
+                "file"
+            };
             let stage = stage_heuristic(&node.name, node.flags.is_virtual());
             let recipe = recipes.get(&node.name);
             let mut obj = serde_json::json!({
@@ -392,7 +407,9 @@ fn to_json(graph: &graph::Graph, recipes: &HashMap<String, String>, scope: Graph
         })
         .collect();
 
-    let edges: Vec<serde_json::Value> = graph.arcs.iter()
+    let edges: Vec<serde_json::Value> = graph
+        .arcs
+        .iter()
         .filter(|arc| included.contains(&arc.from) && included.contains(&arc.to))
         .map(|arc| {
             serde_json::json!({
@@ -408,7 +425,10 @@ fn to_json(graph: &graph::Graph, recipes: &HashMap<String, String>, scope: Graph
 }
 
 /// Collect all nodes reachable from `start` via outgoing edges.
-fn reachable_from_nodes(graph: &graph::Graph, start: graph::NodeIndex) -> HashSet<graph::NodeIndex> {
+fn reachable_from_nodes(
+    graph: &graph::Graph,
+    start: graph::NodeIndex,
+) -> HashSet<graph::NodeIndex> {
     let mut visited = HashSet::new();
     let mut stack = vec![start];
     while let Some(idx) = stack.pop() {
@@ -447,7 +467,8 @@ mod tests {
         let input = "all: hello.o world.o\nhello.o: hello.c\n";
         let tokens = tokenize(input, ShellMode::Sh).unwrap();
         let stmts = parse::parse(&tokens).unwrap();
-        let recipes: HashMap<String, String> = stmts.iter()
+        let recipes: HashMap<String, String> = stmts
+            .iter()
             .filter_map(|s| if let Stmt::Rule(r) = s { Some(r) } else { None })
             .filter_map(|r| r.recipe.clone().map(|rec| (r.targets[0].clone(), rec)))
             .collect();
@@ -464,7 +485,8 @@ mod tests {
         let input = "all:V: hello.c\n\techo build\n";
         let tokens = tokenize(input, ShellMode::Sh).unwrap();
         let stmts = parse::parse(&tokens).unwrap();
-        let recipes: HashMap<String, String> = stmts.iter()
+        let recipes: HashMap<String, String> = stmts
+            .iter()
             .filter_map(|s| if let Stmt::Rule(r) = s { Some(r) } else { None })
             .filter_map(|r| r.recipe.clone().map(|rec| (r.targets[0].clone(), rec)))
             .collect();
@@ -504,11 +526,16 @@ mod tests {
         let stmts = parse::parse(&tokens).unwrap();
         let g = graph::build_graph(&stmts, &["prog".into()]).unwrap();
         let ascii = to_ascii(&g, GraphScope::All, None);
-        assert!(ascii.contains("main.c"), "ascii should list node names: {ascii}");
+        assert!(
+            ascii.contains("main.c"),
+            "ascii should list node names: {ascii}"
+        );
         assert!(ascii.contains("prog"));
         // ascii-dag uses box-drawing glyphs to connect nodes
-        assert!(ascii.contains('[') && ascii.contains(']'),
-            "ascii should bracket node labels: {ascii}");
+        assert!(
+            ascii.contains('[') && ascii.contains(']'),
+            "ascii should bracket node labels: {ascii}"
+        );
     }
 
     #[test]
@@ -518,8 +545,10 @@ mod tests {
         let stmts = parse::parse(&tokens).unwrap();
         let g = graph::build_graph(&stmts, &["all".into()]).unwrap();
         let ascii = to_ascii(&g, GraphScope::All, None);
-        assert!(ascii.contains("all:V"),
-            "virtual target should be suffixed with :V: {ascii}");
+        assert!(
+            ascii.contains("all:V"),
+            "virtual target should be suffixed with :V: {ascii}"
+        );
     }
 
     #[test]
@@ -529,11 +558,16 @@ mod tests {
         let stmts = parse::parse(&tokens).unwrap();
         let g = graph::build_graph(&stmts, &["prog".into()]).unwrap();
         let m = to_mermaid(&g, GraphScope::All, None);
-        assert!(m.starts_with("```mermaid\n"), "should open fenced block: {m}");
+        assert!(
+            m.starts_with("```mermaid\n"),
+            "should open fenced block: {m}"
+        );
         assert!(m.ends_with("```"), "should close fenced block: {m}");
         assert!(m.contains("graph LR"));
-        assert!(m.contains("-- ") || m.contains("-->"),
-            "should have at least one edge: {m}");
+        assert!(
+            m.contains("-- ") || m.contains("-->"),
+            "should have at least one edge: {m}"
+        );
         assert!(m.contains("main.o"));
     }
 
@@ -544,6 +578,9 @@ mod tests {
         let stmts = parse::parse(&tokens).unwrap();
         let g = graph::build_graph(&stmts, &["all".into()]).unwrap();
         let m = to_mermaid(&g, GraphScope::All, None);
-        assert!(m.contains("({"), "virtual target should use {{...}} shape: {m}");
+        assert!(
+            m.contains("({"),
+            "virtual target should use {{...}} shape: {m}"
+        );
     }
 }

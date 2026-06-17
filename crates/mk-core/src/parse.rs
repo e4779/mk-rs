@@ -63,10 +63,7 @@ pub fn parse(tokens: &[Token]) -> Result<Vec<Stmt>, ParseError> {
 ///
 /// Callers who want CLI-override vars (S10) should pre-populate the scope
 /// with `CommandLine`-precedence values before calling this function.
-pub fn parse_with_scope(
-    tokens: &[Token],
-    scope: &mut Scope,
-) -> Result<Vec<Stmt>, ParseError> {
+pub fn parse_with_scope(tokens: &[Token], scope: &mut Scope) -> Result<Vec<Stmt>, ParseError> {
     parse_with_includes(
         tokens,
         &mut IncludeContext::new(),
@@ -850,11 +847,7 @@ mod tests {
 
     #[test]
     fn rejects_dollar_paren_in_any_prereq() {
-        let tokens = tokenize(
-            "target: foo $(bar) baz\n\techo x\n",
-            ShellMode::Sh,
-        )
-        .unwrap();
+        let tokens = tokenize("target: foo $(bar) baz\n\techo x\n", ShellMode::Sh).unwrap();
         let result = parse(&tokens);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -899,9 +892,10 @@ mod tests {
         // the rule is read, not the final value.
         let input = "TARG=early\ntarget: $TARG\nTARG=late\n";
         let stmts = parse_str(input).unwrap();
-        let rule_stmts: Vec<_> = stmts.iter().filter_map(|s| {
-            if let Stmt::Rule(r) = s { Some(r) } else { None }
-        }).collect();
+        let rule_stmts: Vec<_> = stmts
+            .iter()
+            .filter_map(|s| if let Stmt::Rule(r) = s { Some(r) } else { None })
+            .collect();
         assert_eq!(rule_stmts.len(), 1);
         assert_eq!(rule_stmts[0].prereqs, vec!["early"]);
     }
@@ -910,9 +904,16 @@ mod tests {
     fn f045_s2_assign_rhs_expanded() {
         // S2: Assignment RHS is recursively expanded at assignment time.
         let stmts = parse_str("A=world\nB=hello $A\n").unwrap();
-        let assigns: Vec<_> = stmts.iter().filter_map(|s| {
-            if let Stmt::Assign(a) = s { Some((a.name.as_str(), a.value.as_str())) } else { None }
-        }).collect();
+        let assigns: Vec<_> = stmts
+            .iter()
+            .filter_map(|s| {
+                if let Stmt::Assign(a) = s {
+                    Some((a.name.as_str(), a.value.as_str()))
+                } else {
+                    None
+                }
+            })
+            .collect();
         assert_eq!(assigns, vec![("A", "world"), ("B", "hello world")]);
     }
 
@@ -922,9 +923,10 @@ mod tests {
         // target/prereq per word.
         let input = "SRCS=a.c b.c\ntarget: $SRCS\n";
         let stmts = parse_str(input).unwrap();
-        let rule = stmts.iter().find_map(|s| {
-            if let Stmt::Rule(r) = s { Some(r) } else { None }
-        }).unwrap();
+        let rule = stmts
+            .iter()
+            .find_map(|s| if let Stmt::Rule(r) = s { Some(r) } else { None })
+            .unwrap();
         assert_eq!(rule.prereqs, vec!["a.c", "b.c"]);
     }
 
@@ -933,9 +935,10 @@ mod tests {
         // S4: Multiple targets from a variable.
         let input = "TARGS=x y z\n$TARGS:\n";
         let stmts = parse_str(input).unwrap();
-        let rule = stmts.iter().find_map(|s| {
-            if let Stmt::Rule(r) = s { Some(r) } else { None }
-        }).unwrap();
+        let rule = stmts
+            .iter()
+            .find_map(|s| if let Stmt::Rule(r) = s { Some(r) } else { None })
+            .unwrap();
         assert_eq!(rule.targets, vec!["x", "y", "z"]);
     }
 
@@ -944,9 +947,10 @@ mod tests {
         // S5: ${VAR:%.c=%.o} works in target and prereq position.
         let input = "SRC=a.c b.c\ntarget: ${SRC:%.c=%.o}\n";
         let stmts = parse_str(input).unwrap();
-        let rule = stmts.iter().find_map(|s| {
-            if let Stmt::Rule(r) = s { Some(r) } else { None }
-        }).unwrap();
+        let rule = stmts
+            .iter()
+            .find_map(|s| if let Stmt::Rule(r) = s { Some(r) } else { None })
+            .unwrap();
         assert_eq!(rule.prereqs, vec!["a.o", "b.o"]);
     }
 
@@ -955,9 +959,10 @@ mod tests {
         // S6: $$ -> $ in headers, then re-scanned.
         let input = "SRCS=a.c\ntarget: $$SRCS\n";
         let stmts = parse_str(input).unwrap();
-        let rule = stmts.iter().find_map(|s| {
-            if let Stmt::Rule(r) = s { Some(r) } else { None }
-        }).unwrap();
+        let rule = stmts
+            .iter()
+            .find_map(|s| if let Stmt::Rule(r) = s { Some(r) } else { None })
+            .unwrap();
         assert_eq!(rule.prereqs, vec!["a.c"]);
     }
 
@@ -967,9 +972,10 @@ mod tests {
         // -> expand to empty string.
         let input = "target: $prereq $stem $target\n\techo hi\n";
         let stmts = parse_str(input).unwrap();
-        let rule = stmts.iter().find_map(|s| {
-            if let Stmt::Rule(r) = s { Some(r) } else { None }
-        }).unwrap();
+        let rule = stmts
+            .iter()
+            .find_map(|s| if let Stmt::Rule(r) = s { Some(r) } else { None })
+            .unwrap();
         assert_eq!(rule.prereqs, Vec::<String>::new());
     }
 
@@ -978,9 +984,10 @@ mod tests {
         // S9: Target word expands, but the attribute word does NOT.
         let input = "objtype=x86\n${objtype}l.h:Q:\n";
         let stmts = parse_str(input).unwrap();
-        let rule = stmts.iter().find_map(|s| {
-            if let Stmt::Rule(r) = s { Some(r) } else { None }
-        }).unwrap();
+        let rule = stmts
+            .iter()
+            .find_map(|s| if let Stmt::Rule(r) = s { Some(r) } else { None })
+            .unwrap();
         assert_eq!(rule.targets, vec!["x86l.h"]);
         assert!(rule.attributes.is_quiet());
     }
@@ -990,10 +997,14 @@ mod tests {
         // S13/E-2: $PAT where PAT=%.o produces a metarule.
         let input = "PAT=%.o\n$PAT: %.c\n";
         let stmts = parse_str(input).unwrap();
-        let rule = stmts.iter().find_map(|s| {
-            if let Stmt::Rule(r) = s { Some(r) } else { None }
-        }).unwrap();
-        assert!(rule.is_metarule, "variable expanding to %-pattern should be metarule");
+        let rule = stmts
+            .iter()
+            .find_map(|s| if let Stmt::Rule(r) = s { Some(r) } else { None })
+            .unwrap();
+        assert!(
+            rule.is_metarule,
+            "variable expanding to %-pattern should be metarule"
+        );
         assert_eq!(rule.targets, vec!["%.o"]);
     }
 
@@ -1002,9 +1013,10 @@ mod tests {
         // S13/E-3: $NAMES where NAMES=alpha beta produces multiple rules.
         let input = "NAMES=alpha beta\n$NAMES:\n";
         let stmts = parse_str(input).unwrap();
-        let rule = stmts.iter().find_map(|s| {
-            if let Stmt::Rule(r) = s { Some(r) } else { None }
-        }).unwrap();
+        let rule = stmts
+            .iter()
+            .find_map(|s| if let Stmt::Rule(r) = s { Some(r) } else { None })
+            .unwrap();
         assert_eq!(rule.targets, vec!["alpha", "beta"]);
     }
 
@@ -1014,9 +1026,10 @@ mod tests {
         // produces multiple targets/prereqs.
         let input = "FILES=a.c b.c c.c\n$FILES: deps\n";
         let stmts = parse_str(input).unwrap();
-        let rule = stmts.iter().find_map(|s| {
-            if let Stmt::Rule(r) = s { Some(r) } else { None }
-        }).unwrap();
+        let rule = stmts
+            .iter()
+            .find_map(|s| if let Stmt::Rule(r) = s { Some(r) } else { None })
+            .unwrap();
         assert_eq!(rule.targets, vec!["a.c", "b.c", "c.c"]);
     }
 
@@ -1025,9 +1038,10 @@ mod tests {
         // S11b: pre.$VAR with multi-word VAR, known gap F-003a.
         let input = "PARTS=one two\ntarget: pre.$PARTS\n";
         let stmts = parse_str(input).unwrap();
-        let rule = stmts.iter().find_map(|s| {
-            if let Stmt::Rule(r) = s { Some(r) } else { None }
-        }).unwrap();
+        let rule = stmts
+            .iter()
+            .find_map(|s| if let Stmt::Rule(r) = s { Some(r) } else { None })
+            .unwrap();
         assert_eq!(rule.prereqs, vec!["pre.one", "two"]);
     }
 
@@ -1035,13 +1049,17 @@ mod tests {
     fn f045_assign_time_order_matters() {
         let input = "GREETING=$FIRST world\nFIRST=hello\n";
         let stmts = parse_str(input).unwrap();
-        let assigns: Vec<_> = stmts.iter().filter_map(|s| {
-            if let Stmt::Assign(a) = s { Some((a.name.as_str(), a.value.as_str())) } else { None }
-        }).collect();
-        assert_eq!(assigns, vec![
-            ("GREETING", " world"),
-            ("FIRST", "hello"),
-        ]);
+        let assigns: Vec<_> = stmts
+            .iter()
+            .filter_map(|s| {
+                if let Stmt::Assign(a) = s {
+                    Some((a.name.as_str(), a.value.as_str()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(assigns, vec![("GREETING", " world"), ("FIRST", "hello"),]);
     }
 
     #[test]
@@ -1052,9 +1070,10 @@ mod tests {
         scope.set_raw("VAR", "cli_value", super::Precedence::CommandLine);
         let tokens = tokenize("VAR=mkfile_value\ntarget: $VAR\n", ShellMode::Sh).unwrap();
         let stmts = parse_with_scope(&tokens, &mut scope).unwrap();
-        let rule = stmts.iter().find_map(|s| {
-            if let Stmt::Rule(r) = s { Some(r) } else { None }
-        }).unwrap();
+        let rule = stmts
+            .iter()
+            .find_map(|s| if let Stmt::Rule(r) = s { Some(r) } else { None })
+            .unwrap();
         assert_eq!(rule.prereqs, vec!["cli_value"]);
     }
 
@@ -1078,9 +1097,10 @@ mod tests {
         let input = "A = `{echo x.c y.c}\nt: $A\n";
         let tokens = tokenize(input, ShellMode::Sh).unwrap();
         let stmts = parse_with_scope(&tokens, &mut scope).unwrap();
-        let rule = stmts.iter().find_map(|s| {
-            if let Stmt::Rule(r) = s { Some(r) } else { None }
-        }).unwrap();
+        let rule = stmts
+            .iter()
+            .find_map(|s| if let Stmt::Rule(r) = s { Some(r) } else { None })
+            .unwrap();
         assert_eq!(rule.prereqs, vec!["x.c", "y.c"]);
     }
 
@@ -1092,9 +1112,10 @@ mod tests {
         let input = "DATA = `{echo a.toon b.toon}\nt: $DATA\n";
         let tokens = tokenize(input, ShellMode::Sh).unwrap();
         let stmts = parse_with_scope(&tokens, &mut scope).unwrap();
-        let rule = stmts.iter().find_map(|s| {
-            if let Stmt::Rule(r) = s { Some(r) } else { None }
-        }).unwrap();
+        let rule = stmts
+            .iter()
+            .find_map(|s| if let Stmt::Rule(r) = s { Some(r) } else { None })
+            .unwrap();
         assert_eq!(rule.prereqs, vec!["a.toon", "b.toon"]);
     }
 }

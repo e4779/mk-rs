@@ -63,14 +63,14 @@
 //! | [`archive`] | `lib(member)` syntax — archive member auto-rule generation |
 //! | [`error`] | Centralized error types — `MkError`, `LexError`, `ParseError`, … |
 
-pub mod lex;
+pub mod archive;
 pub mod attr;
 pub mod error;
-pub mod parse;
-pub mod var;
 pub mod graph;
-pub mod shell;
+pub mod include;
+pub mod lex;
+pub mod parse;
 pub mod recipe;
 pub mod sched;
-pub mod include;
-pub mod archive;
+pub mod shell;
+pub mod var;

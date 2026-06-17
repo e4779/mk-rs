@@ -5,8 +5,8 @@
 //! `-k` (keep-going), `-t` (touch), `-p` (NPROC), and more.
 //! Reads the mkfile, builds scope, runs `mk_core::build()`, prints results.
 
-use std::io::IsTerminal;
 use std::collections::HashMap;
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
 use clap::Parser;
@@ -16,9 +16,9 @@ use mk_rs_core::lex::{tokenize, ShellMode};
 use mk_rs_core::parse::Stmt;
 use mk_rs_core::sched::{execute, ResolvedRule, SchedOptions};
 use mk_rs_core::var::{builtin_scope, import_env, Precedence};
-use mk_rs_shell::{CustomShell, ShShell};
 #[cfg(feature = "duckscript")]
 use mk_rs_shell::DuckShell;
+use mk_rs_shell::{CustomShell, ShShell};
 
 /// mk — maintain (make) related files
 ///
@@ -148,14 +148,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Read mkfile: try -f argument first, fall back to "mkfile"
-    let input = std::fs::read_to_string(&cli.file).or_else(|_| {
-        std::fs::read_to_string("mkfile")
-    }).map_err(|_| {
-        format!(
-            "no mkfile: could not read '{}' or 'mkfile'",
-            cli.file.display()
-        )
-    })?;
+    let input = std::fs::read_to_string(&cli.file)
+        .or_else(|_| std::fs::read_to_string("mkfile"))
+        .map_err(|_| {
+            format!(
+                "no mkfile: could not read '{}' or 'mkfile'",
+                cli.file.display()
+            )
+        })?;
 
     // Lex + Parse with scope (F-045: read-time expansion in parse)
     let tokens = tokenize(&input, ShellMode::Sh)?;
@@ -185,13 +185,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Determine targets: CLI args or first target of first rule.
     // Filter out VAR=value CLI assignments that clap parsed as positional args.
     let target_names: Vec<String> = if cli.targets.is_empty() {
-        let first_rule = stmts.iter().find_map(|s| {
-            if let Stmt::Rule(r) = s {
-                Some(r)
-            } else {
-                None
-            }
-        });
+        let first_rule = stmts
+            .iter()
+            .find_map(|s| if let Stmt::Rule(r) = s { Some(r) } else { None });
         match first_rule {
             Some(r) => vec![r.targets[0].clone()],
             None => {
@@ -200,7 +196,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     } else {
-        cli.targets.iter()
+        cli.targets
+            .iter()
             .filter(|t| !t.contains('='))
             .cloned()
             .collect()
@@ -225,13 +222,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 if let Stmt::Rule(r) = stmt {
                     if r.is_metarule && !r.is_regex {
                         for pat in &r.targets {
-                            if !pat.contains('%') && !pat.contains('&') { continue; }
+                            if !pat.contains('%') && !pat.contains('&') {
+                                continue;
+                            }
                             if match_simple(&node.name, pat).is_some() {
-                                rules.insert(node.name.clone(), ResolvedRule {
-                                    recipe: r.recipe.clone().unwrap_or_default(),
-                                    attributes: r.attributes,
-                                    all_targets: vec![node.name.clone()], // concrete target, not pattern %.o
-                                });
+                                rules.insert(
+                                    node.name.clone(),
+                                    ResolvedRule {
+                                        recipe: r.recipe.clone().unwrap_or_default(),
+                                        attributes: r.attributes,
+                                        all_targets: vec![node.name.clone()], // concrete target, not pattern %.o
+                                    },
+                                );
                             }
                         }
                     }
@@ -248,7 +250,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         if mkshell.contains("duckscript") || mkshell.ends_with(".ds") {
             #[cfg(not(feature = "duckscript"))]
             {
-                return Err("mk: duckscript support not compiled in (rebuild with --features duckscript)".to_string().into());
+                return Err(
+                    "mk: duckscript support not compiled in (rebuild with --features duckscript)"
+                        .to_string()
+                        .into(),
+                );
             }
             #[cfg(feature = "duckscript")]
             {
@@ -300,7 +306,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let working_dir = std::env::current_dir()?;
 
-    let outcome = execute(&mut graph, &rules, shell.as_ref(), &working_dir, &env, &opts)?;
+    let outcome = execute(
+        &mut graph,
+        &rules,
+        shell.as_ref(),
+        &working_dir,
+        &env,
+        &opts,
+    )?;
 
     // Print failures (only reachable with -k)
     if !outcome.failed.is_empty() {

@@ -154,14 +154,11 @@ impl Lexer {
                         tokens.push(Token::Word(std::mem::take(&mut word)));
                     }
                     // skip to the \n (but don't consume it — we handle it below)
-                    while self.pos < self.chars.len()
-                        && self.chars[self.pos] != '\n'
-                    {
+                    while self.pos < self.chars.len() && self.chars[self.pos] != '\n' {
                         self.pos += 1;
                     }
                     // If we stopped at \n, consume it and emit Newline
-                    if self.pos < self.chars.len() && self.chars[self.pos] == '\n'
-                    {
+                    if self.pos < self.chars.len() && self.chars[self.pos] == '\n' {
                         self.pos += 1;
                         tokens.push(Token::Newline);
                         at_line_start = true;
@@ -264,7 +261,7 @@ impl Lexer {
             if next == '\n' {
                 self.pos += 1; // skip \n
                 match self.mode {
-                    ShellMode::Sh => Some(' '),   // replace with space
+                    ShellMode::Sh => Some(' '),        // replace with space
                     ShellMode::Rc => self.next_char(), // elide both
                 }
             } else if next == '\r'
@@ -311,11 +308,7 @@ impl Lexer {
     // ------------------------------------------------------------------
 
     /// Read until the closing `'`. In rc mode, `''` represents a literal `'`.
-    fn read_single_quoted(
-        &mut self,
-        word: &mut String,
-        start_pos: usize,
-    ) -> Result<(), LexError> {
+    fn read_single_quoted(&mut self, word: &mut String, start_pos: usize) -> Result<(), LexError> {
         loop {
             let c = match self.next_char() {
                 Some(c) => c,
@@ -342,11 +335,7 @@ impl Lexer {
 
     /// Read until an unescaped `"` (sh mode only).  `\"` is an escaped quote
     /// that does NOT close the string.
-    fn read_double_quoted(
-        &mut self,
-        word: &mut String,
-        start_pos: usize,
-    ) -> Result<(), LexError> {
+    fn read_double_quoted(&mut self, word: &mut String, start_pos: usize) -> Result<(), LexError> {
         loop {
             let c = match self.next_char() {
                 Some(c) => c,
@@ -365,9 +354,7 @@ impl Lexer {
                     if let Some(next) = self.next_char() {
                         word.push(next);
                     } else {
-                        return Err(LexError::UnterminatedQuote {
-                            pos: start_pos,
-                        });
+                        return Err(LexError::UnterminatedQuote { pos: start_pos });
                     }
                 }
                 _ => {
@@ -389,11 +376,7 @@ impl Lexer {
     /// Both styles are shell-independent — this is an mkfile-level lexer
     /// feature (plan9port lex.c::bquote). The stored token always ends with
     /// a closing backtick so `expand_backtick` can strip delimiters uniformly.
-    fn read_backtick(
-        &mut self,
-        word: &mut String,
-        start_pos: usize,
-    ) -> Result<(), LexError> {
+    fn read_backtick(&mut self, word: &mut String, start_pos: usize) -> Result<(), LexError> {
         // ── plan9port lex.c::bquote: skip whitespace after ` ──
         // while((c = Bgetrune(bp)) == ' ' || c == '\t') ;
         let first = loop {
@@ -413,9 +396,7 @@ impl Lexer {
                     let c = match self.next_char() {
                         Some(c) => c,
                         None => {
-                            return Err(LexError::UnterminatedBacktick {
-                                pos: start_pos,
-                            });
+                            return Err(LexError::UnterminatedBacktick { pos: start_pos });
                         }
                     };
                     word.push(c);
@@ -433,9 +414,7 @@ impl Lexer {
                     let c = match self.next_char() {
                         Some(c) => c,
                         None => {
-                            return Err(LexError::UnterminatedBacktick {
-                                pos: start_pos,
-                            });
+                            return Err(LexError::UnterminatedBacktick { pos: start_pos });
                         }
                     };
                     word.push(c);
@@ -496,12 +475,7 @@ mod tests {
     fn rule_header() {
         assert_eq!(
             tokenize("target: prereq\n", ShellMode::Sh).unwrap(),
-            tks(vec![
-                w("target"),
-                Token::Colon,
-                w("prereq"),
-                Token::Newline,
-            ])
+            tks(vec![w("target"), Token::Colon, w("prereq"), Token::Newline,])
         );
     }
 
@@ -673,10 +647,7 @@ mod tests {
     fn rc_style_backtick_unterminated() {
         // F-063: unterminated rc-style backtick — missing closing }
         let result = tokenize("`{unclosed", ShellMode::Sh);
-        assert!(matches!(
-            result,
-            Err(LexError::UnterminatedBacktick { .. })
-        ));
+        assert!(matches!(result, Err(LexError::UnterminatedBacktick { .. })));
     }
 
     #[test]
@@ -750,19 +721,13 @@ mod tests {
     #[test]
     fn unterminated_backtick() {
         let result = tokenize("`hello", ShellMode::Sh);
-        assert!(matches!(
-            result,
-            Err(LexError::UnterminatedBacktick { .. })
-        ));
+        assert!(matches!(result, Err(LexError::UnterminatedBacktick { .. })));
     }
 
     #[test]
     fn unterminated_rc_backtick() {
         let result = tokenize("`{hello", ShellMode::Sh);
-        assert!(matches!(
-            result,
-            Err(LexError::UnterminatedBacktick { .. })
-        ));
+        assert!(matches!(result, Err(LexError::UnterminatedBacktick { .. })));
     }
 
     // ---- dollar sign in words ----
@@ -949,18 +914,12 @@ mod tests {
     #[test]
     fn angle_in_middle_of_word() {
         // < in the middle of a word is part of the word
-        assert_eq!(
-            tokenize("a<b", ShellMode::Sh).unwrap(),
-            tks(vec![w("a<b")])
-        );
+        assert_eq!(tokenize("a<b", ShellMode::Sh).unwrap(), tks(vec![w("a<b")]));
     }
 
     #[test]
     fn pipe_in_middle_of_word() {
-        assert_eq!(
-            tokenize("a|b", ShellMode::Sh).unwrap(),
-            tks(vec![w("a|b")])
-        );
+        assert_eq!(tokenize("a|b", ShellMode::Sh).unwrap(), tks(vec![w("a|b")]));
     }
 
     // ---- : and = inside a regular word (no ${...}) ----
@@ -1007,10 +966,7 @@ mod tests {
     fn backtick_in_recipe_passed_verbatim() {
         // Recipes should pass backticks through verbatim — they're shell syntax.
         // Regression: lexer was trying to match backticks in recipes.
-        let result = tokenize(
-            "target:\n\tcmd `backtick` arg\n",
-            ShellMode::Sh,
-        ).unwrap();
+        let result = tokenize("target:\n\tcmd `backtick` arg\n", ShellMode::Sh).unwrap();
         // Recipe line should be treated as raw tokens, not backtick-processed
         let tokens = tks(vec![
             w("target"),
@@ -1018,7 +974,7 @@ mod tests {
             Token::Newline,
             Token::Indent,
             w("cmd"),
-            w("`backtick`"),  // backtick text preserved as-is
+            w("`backtick`"), // backtick text preserved as-is
             w("arg"),
             Token::Newline,
         ]);
@@ -1028,17 +984,14 @@ mod tests {
     #[test]
     fn backtick_brace_in_recipe_passed_verbatim() {
         // es-style `{cmd}` in recipes should pass through verbatim
-        let result = tokenize(
-            "target:\n\techo `{uptime}`\n",
-            ShellMode::Sh,
-        ).unwrap();
+        let result = tokenize("target:\n\techo `{uptime}`\n", ShellMode::Sh).unwrap();
         let tokens = tks(vec![
             w("target"),
             Token::Colon,
             Token::Newline,
             Token::Indent,
             w("echo"),
-            w("`{uptime}`"),  // rc-style backtick preserved verbatim
+            w("`{uptime}`"), // rc-style backtick preserved verbatim
             Token::Newline,
         ]);
         assert_eq!(result, tokens);

@@ -174,10 +174,7 @@ mod tests {
 
     #[test]
     fn mk_error_from_var_error() {
-        let err: MkError = VarError::UndefinedVar {
-            name: "FOO".into(),
-        }
-        .into();
+        let err: MkError = VarError::UndefinedVar { name: "FOO".into() }.into();
         assert!(matches!(err, MkError::Var(_)));
     }
 
@@ -253,3 +250,4 @@ mod tests {
         assert!(size_of::<MkError>() <= 56);
     }
 }
+// pre-commit hook test 1781659076

@@ -155,15 +155,33 @@ impl Error for ParseAttrError {}
 
 /// Human-readable descriptions for CLI help / `-e` flag.
 pub const ATTR_HELP: &[(&str, &str)] = &[
-    ("V", "Virtual target — not a real file, always considered stale"),
+    (
+        "V",
+        "Virtual target — not a real file, always considered stale",
+    ),
     ("Q", "Quiet — don't echo recipe before executing"),
-    ("N", "No-exec — treat target as updated without running recipe"),
-    ("U", "Unexported — target is updated even if recipe didn't change it"),
+    (
+        "N",
+        "No-exec — treat target as updated without running recipe",
+    ),
+    (
+        "U",
+        "Unexported — target is updated even if recipe didn't change it",
+    ),
     ("D", "Delete on error — delete target if recipe fails"),
     ("E", "Exclusive — run recipe without parallel jobs"),
-    ("P", "Custom comparison — use program to determine if target is stale"),
-    ("R", "Regex metarule — target pattern is a regular expression"),
-    ("n", "No-virtual — metarule matches only real files, not virtual targets"),
+    (
+        "P",
+        "Custom comparison — use program to determine if target is stale",
+    ),
+    (
+        "R",
+        "Regex metarule — target pattern is a regular expression",
+    ),
+    (
+        "n",
+        "No-virtual — metarule matches only real files, not virtual targets",
+    ),
 ];
 
 #[cfg(test)]

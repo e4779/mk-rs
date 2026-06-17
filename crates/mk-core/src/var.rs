@@ -74,11 +74,7 @@ pub fn expand_backtick(value: &str) -> String {
         return value.to_string();
     };
 
-    match std::process::Command::new("sh")
-        .arg("-c")
-        .arg(cmd)
-        .output()
-    {
+    match std::process::Command::new("sh").arg("-c").arg(cmd).output() {
         Ok(out) => {
             let stdout = String::from_utf8_lossy(&out.stdout);
             stdout.trim().to_string()
@@ -120,8 +116,7 @@ impl Scope {
         }
         let expanded = expand_backtick(value);
         let expanded = self.expand(&expanded);
-        self.vars
-            .insert(name.to_string(), (expanded, prec));
+        self.vars.insert(name.to_string(), (expanded, prec));
         true
     }
 
@@ -159,11 +154,7 @@ impl Scope {
 
     /// Check if a variable exists in this scope or any parent.
     pub fn contains(&self, name: &str) -> bool {
-        self.vars.contains_key(name)
-            || self
-                .parent
-                .as_ref()
-                .is_some_and(|p| p.contains(name))
+        self.vars.contains_key(name) || self.parent.as_ref().is_some_and(|p| p.contains(name))
     }
 
     /// Iterate over all variables visible from this scope (including parents).
@@ -257,13 +248,11 @@ impl Scope {
                                     let pattern = &subst[..eq_pos];
                                     let replacement = &subst[eq_pos + 1..];
                                     let value = self.get(var_name).unwrap_or("");
-                                    let expanded =
-                                        namelist_transform(value, pattern, replacement);
+                                    let expanded = namelist_transform(value, pattern, replacement);
                                     result.push_str(&expanded);
                                 } else {
                                     // Pattern without = — just do simple lookup
-                                    result
-                                        .push_str(self.get(content).unwrap_or(""));
+                                    result.push_str(self.get(content).unwrap_or(""));
                                 }
                             } else {
                                 // Simple ${VAR}
@@ -281,7 +270,7 @@ impl Scope {
                     _ => {
                         // Check if next char starts a valid variable name
                         // (alphabetic or underscore, per mk convention)
-                        if !bytes[i+1].is_ascii_alphabetic() && bytes[i+1] != b'_' {
+                        if !bytes[i + 1].is_ascii_alphabetic() && bytes[i + 1] != b'_' {
                             // Not a valid var name — treat $ as literal
                             result.push('$');
                             i += 1;
@@ -360,8 +349,7 @@ fn namelist_transform(value: &str, pattern: &str, replacement: &str) -> String {
             let stem_end = word.len() - pat_suf.len();
             if stem_start <= stem_end {
                 let stem = &word[stem_start..stem_end];
-                let mut out =
-                    String::with_capacity(repl_pre.len() + stem.len() + repl_suf.len());
+                let mut out = String::with_capacity(repl_pre.len() + stem.len() + repl_suf.len());
                 out.push_str(repl_pre);
                 out.push_str(stem);
                 out.push_str(repl_suf);
@@ -758,10 +746,7 @@ mod tests {
     fn expand_mixed_literal_and_var() {
         let mut s = Scope::new();
         s.set("SRC", "main.c", Precedence::Mkfile);
-        assert_eq!(
-            s.expand("cc $CFLAGS -c $SRC"),
-            "cc  -c main.c"
-        );
+        assert_eq!(s.expand("cc $CFLAGS -c $SRC"), "cc  -c main.c");
     }
 
     #[test]
@@ -848,12 +833,13 @@ mod tests {
     #[test]
     fn expand_namelist_partial_match() {
         let mut s = Scope::new();
-        s.set("FILES", "src/main.c README.md src/lib.c", Precedence::Mkfile);
-        // Only .c files match %.c pattern; non-matching words are dropped.
-        assert_eq!(
-            s.expand("${FILES:%.c=%.o}"),
-            "src/main.o src/lib.o"
+        s.set(
+            "FILES",
+            "src/main.c README.md src/lib.c",
+            Precedence::Mkfile,
         );
+        // Only .c files match %.c pattern; non-matching words are dropped.
+        assert_eq!(s.expand("${FILES:%.c=%.o}"), "src/main.o src/lib.o");
     }
 
     #[test]
@@ -861,10 +847,7 @@ mod tests {
         let mut s = Scope::new();
         s.set("SRC", "src/main.c src/util.c", Precedence::Mkfile);
         // Change prefix: src/%.c → obj/%.o
-        assert_eq!(
-            s.expand("${SRC:src/%.c=obj/%.o}"),
-            "obj/main.o obj/util.o"
-        );
+        assert_eq!(s.expand("${SRC:src/%.c=obj/%.o}"), "obj/main.o obj/util.o");
     }
 
     #[test]

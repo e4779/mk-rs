@@ -23,10 +23,10 @@
 //!
 //! [`mk_rs_core::shell::Shell`]: ../mk_rs_core/shell/trait.Shell.html
 
+use mk_rs_core::shell::{Shell, ShellError, ShellResult};
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
-use mk_rs_core::shell::{Shell, ShellResult, ShellError};
 
 /// POSIX /bin/sh shell implementation.
 #[derive(Debug, Clone)]
@@ -44,10 +44,10 @@ impl Shell for ShShell {
         dir: &Path,
     ) -> Result<ShellResult, ShellError> {
         let mut cmd = Command::new("/bin/sh");
-        cmd.arg("-e")           // exit on first error
-           .arg("-c")           // read command from argument
-           .arg(recipe)
-           .current_dir(dir);
+        cmd.arg("-e") // exit on first error
+            .arg("-c") // read command from argument
+            .arg(recipe)
+            .current_dir(dir);
 
         // Clear and set environment
         cmd.env_clear();
@@ -122,12 +122,16 @@ pub struct CustomShell {
 
 impl CustomShell {
     pub fn new(cmd: &str) -> Self {
-        Self { cmd: cmd.to_string() }
+        Self {
+            cmd: cmd.to_string(),
+        }
     }
 }
 
 impl Shell for CustomShell {
-    fn name(&self) -> &str { &self.cmd }
+    fn name(&self) -> &str {
+        &self.cmd
+    }
 
     fn execute(
         &self,
@@ -137,7 +141,9 @@ impl Shell for CustomShell {
     ) -> Result<ShellResult, ShellError> {
         let parts: Vec<&str> = self.cmd.split_whitespace().collect();
         if parts.is_empty() {
-            return Err(ShellError::ShellNotFound { name: "empty MKSHELL".into() });
+            return Err(ShellError::ShellNotFound {
+                name: "empty MKSHELL".into(),
+            });
         }
         let mut cmd = Command::new(parts[0]);
         // If no flags specified, default to -c (POSIX shell convention)
@@ -181,7 +187,9 @@ mod custom_shell_tests {
     fn custom_shell_bash() {
         let shell = CustomShell::new("/bin/bash -c");
         assert_eq!(shell.name(), "/bin/bash -c");
-        let result = shell.execute("echo hello", &HashMap::new(), Path::new(".")).unwrap();
+        let result = shell
+            .execute("echo hello", &HashMap::new(), Path::new("."))
+            .unwrap();
         assert_eq!(result.exit_code, 0);
     }
 
@@ -191,7 +199,9 @@ mod custom_shell_tests {
         // MKSHELL=node -e → runs node -e "recipe"
         let shell = CustomShell::new("node -e");
         assert_eq!(shell.name(), "node -e");
-        let result = shell.execute("console.log('hello')", &HashMap::new(), Path::new(".")).unwrap();
+        let result = shell
+            .execute("console.log('hello')", &HashMap::new(), Path::new("."))
+            .unwrap();
         assert_eq!(result.exit_code, 0);
     }
 
@@ -199,7 +209,9 @@ mod custom_shell_tests {
     fn custom_shell_no_flags_defaults_to_c() {
         // MKSHELL=/bin/sh → defaults to /bin/sh -c "recipe"
         let shell = CustomShell::new("/bin/bash");
-        let result = shell.execute("echo hi", &HashMap::new(), Path::new(".")).unwrap();
+        let result = shell
+            .execute("echo hi", &HashMap::new(), Path::new("."))
+            .unwrap();
         assert_eq!(result.exit_code, 0);
     }
 }
@@ -233,8 +245,7 @@ impl Shell for DuckShell {
             .map_err(|e| ShellError::Io(std::io::Error::other(e.to_string())))?;
 
         // Set working directory
-        std::env::set_current_dir(dir)
-            .map_err(ShellError::Io)?;
+        std::env::set_current_dir(dir).map_err(ShellError::Io)?;
 
         // Run script
         duckscript::runner::run_script(recipe, context, None)

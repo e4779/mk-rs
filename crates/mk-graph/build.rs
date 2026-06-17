@@ -15,13 +15,17 @@ fn main() {
 
 fn read_hash_file() -> Option<String> {
     let path = Path::new(&env::var("CARGO_MANIFEST_DIR").ok()?).join("GIT_HASH");
-    fs::read_to_string(path).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+    fs::read_to_string(path)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 fn git_short() -> Option<String> {
     Command::new("git")
         .args(["rev-parse", "--short", "HEAD"])
-        .output().ok()
+        .output()
+        .ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|s| s.trim().to_string())
 }
