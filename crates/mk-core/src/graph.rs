@@ -182,7 +182,13 @@ fn expand_globs(prereqs: &[String]) -> Vec<String> {
 ///
 /// Tries `%` first (greedy, matches anything), then `&` (matches a single
 /// path component with no dots or slashes).
-fn match_metarule(target: &str, pattern: &str) -> Option<String> {
+///
+/// Public so the CLI binary can reuse it when resolving which metarule
+/// applies to a concrete graph node — single source of truth for pattern
+/// matching. (Bug B: an earlier local copy `match_simple` in main.rs handled
+/// only `%`, so `&` metarules silently failed to expose their recipe to the
+/// scheduler and the matched target was treated as a leaf/source file.)
+pub fn match_metarule(target: &str, pattern: &str) -> Option<String> {
     if pattern.contains('%') {
         return match_percent(target, pattern);
     }
@@ -1269,6 +1275,45 @@ mod tests {
         assert_eq!(g.nodes[arc.from.0].name, "hello.c");
     }
 
+    #[test]
+    fn bug_b_amp_compound_pattern_matches() {
+        // Bug B regression: a compound `&` metarule — non-empty prefix AND
+        // suffix around the `&` — used to build a correct graph (matcher
+        // worked) but the recipe never ran, because main.rs's now-removed
+        // local `match_simple` only handled `%` and silently failed to
+        // resolve the metarule recipe for the matched target. The scheduler
+        // then treated the target as a leaf/source file and skipped it.
+        //
+        // Reported via invest-research session 019ed037: `out2/&-metrics.toon`
+        // rules produced nothing; plan9port mk produced the file with
+        // stem=foo.
+        //
+        // We test the matcher here (single source of truth, now pub) AND the
+        // graph: the meta arc must carry stem="foo" with the prereq
+        // `src2/foo.toon`. End-to-end execution is verified via the MRE in
+        // testdata/regression-mre/bug-B-amp-metarule.mkfile.
+        assert_eq!(
+            match_metarule("out2/foo-metrics.toon", "out2/&-metrics.toon"),
+            Some("foo".to_string()),
+            "compound & pattern must match and extract stem (Bug B)"
+        );
+        let input = "out2/&-metrics.toon: src2/&.toon\n\tcp $prereq $target\n";
+        let g = graph_from_str(input, &["out2/foo-metrics.toon"]).unwrap();
+        let node = g
+            .nodes
+            .iter()
+            .find(|n| n.name == "out2/foo-metrics.toon")
+            .expect("target node must exist");
+        assert_eq!(node.arcs_in.len(), 1);
+        let arc = &g.arcs[node.arcs_in[0].0];
+        assert!(arc.is_meta, "arc should come from the & metarule");
+        assert_eq!(arc.stem, "foo");
+        assert_eq!(g.nodes[arc.from.0].name, "src2/foo.toon");
+        // Bug A fix also applies: node-level stem must be populated so
+        // build_recipe can recover it even without inspecting arcs.
+        assert_eq!(node.stem, "foo");
+    }
+
     // ── R: regex metarule tests ─────────────────────────────────────
 
     #[test]
@@ -1808,4 +1853,3 @@ mod tests {
     }
 
 }
-

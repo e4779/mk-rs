@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-use mk_rs_core::graph::build_graph_with_nrep;
+use mk_rs_core::graph::{build_graph_with_nrep, match_metarule};
 use mk_rs_core::lex::{tokenize, ShellMode};
 use mk_rs_core::parse::Stmt;
 use mk_rs_core::sched::{execute, ResolvedRule, SchedOptions};
@@ -83,18 +83,10 @@ struct Cli {
     targets: Vec<String>,
 }
 
-/// Simple % pattern matching (subset of graph.rs::match_metarule)
-fn match_simple(target: &str, pattern: &str) -> Option<String> {
-    if let Some(pos) = pattern.find('%') {
-        let prefix = &pattern[..pos];
-        let suffix = &pattern[pos + 1..];
-        if target.starts_with(prefix) && target.ends_with(suffix) {
-            let stem = &target[prefix.len()..target.len() - suffix.len()];
-            return Some(stem.to_string());
-        }
-    }
-    None
-}
+// Pattern matching for metarules is provided by `mk_rs_core::graph::match_metarule`
+// (single source of truth). It handles both `%` and `&` forms. Earlier, a
+// local `match_simple` here only covered `%`, which silently broke `&`
+// metarules (Bug B). See crates/mk-core/src/graph.rs.
 
 fn main() {
     if let Err(e) = run() {
@@ -226,7 +218,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     if r.is_metarule && !r.is_regex {
                         for pat in &r.targets {
                             if !pat.contains('%') && !pat.contains('&') { continue; }
-                            if match_simple(&node.name, pat).is_some() {
+                            if match_metarule(&node.name, pat).is_some() {
                                 rules.insert(node.name.clone(), ResolvedRule {
                                     recipe: r.recipe.clone().unwrap_or_default(),
                                     attributes: r.attributes,
