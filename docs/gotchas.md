@@ -34,13 +34,22 @@ not via `var::Scope::expand`. If you change how recipe vars are populated
 
 ### `:V:` is an ATTRIBUTE, not part of the target name
 
-When referencing a virtual target as a prereq, use just the name:
-`run: build` (NOT `run: build:V:`). The parser greedily interprets `Word:`
-after a target header as attributes — `build:V:` as a prereq gets parsed as
-target `build` with bogus attribute chars `V`.
+`:V:` attaches a virtual attribute to a *rule's target*, written in the
+`target:VQ:` position between the target name and its prerequisites. It is
+never written on a prereq reference. Writing `run: build:V:` does NOT make
+`build` a virtual prereq — after the first `:` ends `run`'s target header,
+mk-rust's parser sees `build` followed by `:` and tries to parse it as an
+attribute block (same `target:VQ:` syntax), then fails with
+`unknown attribute b`. Use just the name: `run: build`. Declare `:V:` on the
+rule that *defines* the virtual: `build:V:`.
 
-*Why:* the attribute-position grammar is ambiguous with the target-name
-grammar; the parser resolves it greedily at the first `Word:`.
+*Why:* the `target:<attrs>: prereq` and `target: <prereq-name>` grammars
+share the first `:`; mk-rust resolves the ambiguity positionally. Attributes
+belong on the rule declaring the target, not on references to it.
+
+*Divergence note:* plan9port mk reports the same `run: build:V:` differently
+(`don't know how to make 'build:V:'` — treats it as a literal prereq name).
+Both reject the input; only the error differs.
 
 ### Virtual targets must be explicit (`:V:`)
 
