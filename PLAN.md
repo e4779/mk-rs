@@ -31,11 +31,43 @@ What must hold true. What must never happen.
 - **No unsafe code.** `#![forbid(unsafe_code)]` in mk-core and mk-shell
   `lib.rs` — compile-time enforced, cannot be `#[allow]`'d.
 - **No daemon / watch mode.** mk is a build tool. Compose with `watchexec` /
-  `cargo watch` / shell one-liner. (Won't-do — see AGENTS.md decision 5.)
+  `cargo watch` / shell one-liner (`while inotifywait .; do mk; done`). Plan 9
+  mk never had this. (See Decisions below for the why-not.)
 - **Library-first.** `mk-core` exposes `build(mkfile_path, opts)`. The CLI is
   a thin wrapper, not the primary interface.
 - **Plan 9 mk compatibility.** mkfiles intended for plan9port mk must work
   unchanged (sh recipes). GNU Make compatibility is explicitly not a goal.
+
+## Decisions
+
+Architectural choices with rejected alternatives. An agent starting blank must
+read these before proposing architectural changes — re-proposing a rejected
+option is the most common form of regression. Format: `Decision — Rejected:
+alternative, reason`.
+
+1. **Arena-based DAG (Vec + indices).** `NodeIndex(usize)` and `ArcIndex(usize)`
+   newtypes; graph is immutable after build.
+   Rejected: `Rc<RefCell<Node>>` — interior mutability, runtime borrow panics,
+   pointer chasing, no clear ownership.
+
+2. **Crossbeam/sync threads.** Recipe execution is inherently blocking
+   (`Command::status()`). `sync::thread::scope` for NPROC-based worker pool.
+   Rejected: tokio — ~20 extra deps, async I/O irrelevant for fork/exec.
+
+3. **sh as default shell.** Validated by 9base (also chose sh). Duckscript
+   optional via `MKSHELL=duckscript`; any shell via `MKSHELL=node -e`.
+   Rejected: rc — not available by default on Linux/macOS. Duckscript as
+   *default* — can't run arbitrary binaries (no gcc/python/R), only built-ins.
+
+4. **Separate mk-graph binary for visualization.** Keeps `mk` lean (no serde
+   dep). JSON/DOT export, dead-end detection, recipe text — all in mk-graph.
+   Rejected: feature-gating serde behind a cargo flag — leaks into the mk-core
+   public API surface (Graph types would need conditional serde derives).
+
+5. **No daemon / watch mode.** mk is a build tool, not a daemon. Compose with
+   `watchexec` / `cargo watch` / shell one-liner.
+   Rejected: in-tree `mk --watch` — bloats mk-core (signal handling in threads,
+   file-watching dep) for ergonomics that external tools cover.
 
 ---
 

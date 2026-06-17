@@ -134,4 +134,4 @@ Variables set in the mkfile, on the command line (`mk TOKEN=xyz`), or imported f
 
 - `docs/mk-spec.md` §5.8 — Environment and Recipes (F-064)
 - `docs/mk-spec.md` §4.1 — Variable System (F-040, F-041, F-042)
-- `AGENTS.md` — Gotchas section
+- `docs/gotchas.md` — recipe-line opacity, `$target`/`$prereq` as env vars

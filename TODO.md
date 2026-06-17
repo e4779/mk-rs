@@ -8,11 +8,11 @@
 
 ## Current focus
 
-**Documentation restructuring in progress** (#22). v0.2.2 shipped (F-045, F-063,
-Bug 4). Infrastructure wave landed (pre-commit hooks, coverage ratchet,
-git-cliff CHANGELOG, conventional commits). PLAN.md being slimmed from 777 →
-~130 lines. Bug A/B (`bugfix/pattern-rule-stem-extraction` branch) held for
-merge after docs (#39).
+Documentation restructuring complete (#22, #26, #30). PLAN.md slimmed
+1380 → 94 lines; AGENTS.md ultra-thin; gotchas migrated to docs/gotchas.md.
+Infrastructure wave landed (pre-commit hooks, coverage ratchet, git-cliff,
+conventional commits). Next: merge Bug A/B (`bugfix/pattern-rule-stem-extraction`
+branch, #39), then `-s` flag resolution.
 
 ---
 
@@ -50,14 +50,6 @@ Orthogonal layer to F-045 (lexer, not parse/var). Currently hidden under F-003
 
 Details: `docs/design-f-045.md` §7 (quoting divergence) + §10 (QC-1/QC-4/QC-7).
 Tracked as TRACEABILITY row F-003a (`◐`).
-
-### AGENTS.md slimming — deferred (#30)
-
-Project AGENTS.md should become shortest ("read README, key docs at X, build
-commands Y"). Why-not entries (currently transitional in AGENTS) + gotchas
-migrate to `APPEND_SYSTEM.md` (global, already extended with wiki-first +
-conventional-commits sections in #33). Two-beat audit on gotchas after
-migration. Blocked on completing #22 (PLAN restructure) first.
 
 ---
 
