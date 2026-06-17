@@ -71,56 +71,66 @@ done
 [ "$RUST_CHANGED" = "0" ] && { log_info "no Rust/Cargo changes in push — skipping coverage gate"; exit 0; }
 
 # --- Run coverage --------------------------------------------------------
-log_info "measuring coverage (cargo llvm-cov --workspace --summary-only)"
-if ! COV_OUTPUT=$(cd "$ROOT" && cargo llvm-cov --workspace --summary-only 2>&1); then
-    log_fail "cargo llvm-cov failed"
-    printf '%s\n' "$COV_OUTPUT" | tail -20
-    hook_die
-fi
-
-# Extract the TOTAL row's line-coverage percentage.
-# Format: "TOTAL  <regions> ... <lines> <missed_lines> XX.YY% ..."
-CURRENT=$(printf '%s\n' "$COV_OUTPUT" | awk '/^TOTAL/ {for (i=1; i<=NF; i++) if ($i ~ /%$/){print $i; exit}}' | tr -dc '0-9.')
-
-if [ -z "$CURRENT" ]; then
-    log_warn "could not parse coverage percentage from cargo-llvm-cov output"
-    log_info "skipping gate (parsing bug — please investigate)"
-    exit 0
-fi
-
-# Tolerance band: scheduler/parser tests are mildly non-deterministic,
-# producing ~0.04% line-coverage jitter between identical runs. A tolerance
-# of 0.10% absorbs that noise so the ratchet doesn't flap: it only triggers
-# on real regressions (>0.10% drop) or real improvements (>0.10% gain),
-# leaving the baseline untouched for steady-state noise.
+# Delegate the pass/fail decision to cargo-llvm-cov's --fail-under-lines
+# (it exits 1 when below threshold) instead of parsing the TOTAL row
+# ourselves — earlier versions grabbed the regions % by mistake and called
+# it line coverage, which silently inflated the baseline. cargo-llvm-cov
+# owns the metric definition.
+#
+# Threshold = baseline − tolerance (mirror the CI mirror in
+# .gitverse/workflows/ci.yml; scheduler/parser tests are mildly
+# non-deterministic, producing ~0.04% jitter, so a 0.10% band absorbs noise
+# without flapping).
 TOLERANCE=0.10
+THRESHOLD=$(awk "BEGIN { printf \"%.2f\", $BASELINE - $TOLERANCE }")
 
-log_info "current coverage: ${CURRENT}%   baseline: ${BASELINE}%   tolerance: ±${TOLERANCE}%"
+log_info "measuring coverage (cargo llvm-cov --workspace --summary-only --fail-under-lines $THRESHOLD)"
+log_info "baseline $BASELINE%, fail-under-lines threshold $THRESHOLD% (baseline − $TOLERANCE jitter tolerance)"
 
-# Use awk for float comparison (bash doesn't do floats).
-REGRESSED=$(awk "BEGIN { print ($CURRENT < $BASELINE - $TOLERANCE) ? 1 : 0 }")
-IMPROVED=$(awk  "BEGIN { print ($CURRENT > $BASELINE + $TOLERANCE) ? 1 : 0 }")
-
-if [ "$REGRESSED" = "1" ]; then
-    log_fail "coverage regression: ${CURRENT}% < ${BASELINE}% (outside ±${TOLERANCE}% tolerance)"
+# Capture full output for diagnostics, but rely on exit code for the gate.
+if ! COV_OUTPUT=$(cd "$ROOT" && cargo llvm-cov --workspace --summary-only --fail-under-lines "$THRESHOLD" 2>&1); then
+    log_fail "coverage regression: below $THRESHOLD% (baseline $BASELINE% − $TOLERANCE% tolerance)"
+    printf '%s\n' "$COV_OUTPUT" | tail -20
     printf '\n'
     log_info "options:"
     log_info "  1. Add tests to cover the new/changed code, then push again."
     log_info "  2. If the drop is intentional (removed dead code, etc.), update baseline:"
-    printf '       echo %.2f > .coverage-baseline && git add .coverage-baseline\n' "$CURRENT"
+    printf '       echo X.XX > .coverage-baseline && git add .coverage-baseline\n'
+    log_info "     where X.XX is the new TOTAL Lines % from the output above."
     log_info "  3. Bypass this once (emergency only): COVERAGE_SKIP=1 git push"
     hook_die
 fi
 
-if [ "$IMPROVED" = "1" ]; then
-    log_pass "coverage improved: ${BASELINE}% → ${CURRENT}%   (ratcheting baseline up)"
-    # Auto-bump baseline (ratchet). Two decimals, matches file format.
-    printf '%.2f\n' "$CURRENT" > "$BASELINE_FILE"
-    # Note: we cannot `git add` here (pre-push runs after refs are updated);
-    # the developer commits the new baseline file separately. Print a hint.
-    log_info "baseline bumped in .coverage-baseline — commit it: git add .coverage-baseline"
+# Gate passed. Check for improvement to ratchet the baseline up.
+# Parse the TOTAL row's LINES coverage (column after the 2 'missed' counts
+# following the Lines count). Print only the LINES % — robust against column
+# drift by anchoring on the label.
+CURRENT=$(printf '%s\n' "$COV_OUTPUT" | awk '
+    /^TOTAL/ {
+        # Columns: TOTAL Regions MissedRegions Regions% Functions MissedFuncs Func% Lines MissedLines Lines%
+        # The 3rd %-field is Lines coverage (Regions=1, Functions=2, Lines=3).
+        # When branches are enabled there would be a 4th, but we run without
+        # branch coverage, so Lines is always #3.
+        pct_count = 0
+        for (i = 1; i <= NF; i++) {
+            if ($i ~ /%$/) {
+                pct_count++
+                if (pct_count == 3) { print $i; exit }
+            }
+        }
+    }' | tr -dc '0-9.')
+
+if [ -n "$CURRENT" ]; then
+    IMPROVED=$(awk "BEGIN { print ($CURRENT > $BASELINE + $TOLERANCE) ? 1 : 0 }")
+    if [ "$IMPROVED" = "1" ]; then
+        log_pass "lines coverage improved: ${BASELINE}% → ${CURRENT}%   (ratcheting baseline up)"
+        printf '%.2f\n' "$CURRENT" > "$BASELINE_FILE"
+        log_info "baseline bumped in .coverage-baseline — commit it: git add .coverage-baseline"
+    else
+        log_pass "lines coverage within tolerance of baseline (${BASELINE}%, measured ${CURRENT}%)"
+    fi
 else
-    log_pass "coverage within tolerance of baseline (${BASELINE}%, measured ${CURRENT}%)"
+    log_pass "coverage gate passed (could not parse Lines % for ratchet — baseline unchanged)"
 fi
 
 section "coverage gate passed"
