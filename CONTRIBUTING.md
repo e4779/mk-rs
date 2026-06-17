@@ -18,19 +18,26 @@ Rust 1.92+ required (the `mk-graph` crate depends on `ascii-dag`).
 ## Tiered gates
 
 Quality gates are split by cost — fast checks run on every commit,
-slow checks run on every push. This keeps the commit loop snappy without
-sacrificing coverage.
+slow checks run on every push, and all of them mirror in CI for safety.
+This keeps the commit loop snappy without sacrificing coverage, and
+means a contributor without local hooks still gets caught.
 
 | Tier | Where | What | Time |
 |------|-------|------|------|
-| **Fast** | `.githooks/pre-commit` | `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test --workspace` | ~5-10s |
+| **Fast** | `.githooks/pre-commit` | `cargo fmt --all --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --workspace` | ~5-10s |
 | **Coverage ratchet** | `.githooks/pre-push` | `cargo llvm-cov --workspace`, compared against `.coverage-baseline` (auto-ratchets up, blocks on >0.10% regression) | ~15s |
+| **CI mirror** | `.gitverse/workflows/ci.yml` | Same fmt + clippy + test + coverage-ratchet, on every push/PR/tag. Slower than local but runs even when hooks aren't installed. | ~1-3min per job |
 
-Both hooks skip automatically when no `.rs`/`.toml`/`Cargo.lock` files
-are staged/being pushed (docs-only changes go through instantly).
+Local hooks skip automatically when no `.rs`/`.toml`/`Cargo.lock` files
+are staged/being pushed (docs-only changes go through instantly). The
+CI mirror does *not* skip — it is the safety net for changes that
+slipped past the local layer (e.g. contributor without hooks, or an
+agent in a fresh worktree).
 
-Baseline: **89.90% line coverage** as of v0.2.2+infrastructure. Stored
-in `.coverage-baseline` at repo root.
+Baseline: **90.17% line coverage** as of v0.2.3. Stored in
+`.coverage-baseline` at repo root. The local pre-push ratchet bumps it
+automatically when coverage improves; commit the bumped file separately
+(hint printed by the hook).
 
 ### Installing the hooks
 

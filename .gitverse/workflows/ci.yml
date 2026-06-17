@@ -9,6 +9,19 @@ on:
     branches: [main]
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    container:
+      image: rust:latest
+    steps:
+      - run: git clone https://gitverse.ru/${{ github.repository }}.git .
+      # rustfmt is available by default; ensure component is present.
+      - run: rustup component add rustfmt clippy
+      - name: cargo fmt --check
+        run: cargo fmt --all --check
+      - name: cargo clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
   test:
     runs-on: ubuntu-latest
     container:
@@ -18,9 +31,35 @@ jobs:
       - run: cargo build --verbose
       - run: cargo test --verbose
 
+  coverage:
+    # Coverage ratchet — mirrors .githooks/pre-push locally. Fails the CI
+    # run if line coverage falls below the baseline in .coverage-baseline.
+    # The baseline is bumped manually (or via local pre-push ratchet) when
+    # coverage improves.
+    runs-on: ubuntu-latest
+    container:
+      image: rust:latest
+    steps:
+      - run: git clone https://gitverse.ru/${{ github.repository }}.git .
+      - name: Install cargo-llvm-cov + llvm-tools
+        run: |
+          rustup component add llvm-tools-preview
+          cargo install cargo-llvm-cov --locked
+      - name: Read baseline
+        id: baseline
+        run: |
+          # .coverage-baseline contains a float like '90.17'. Strip to digits+dots.
+          baseline=$(tr -dc '0-9.' < .coverage-baseline)
+          echo "baseline=$baseline" >> "$GITHUB_OUTPUT"
+          echo "Coverage baseline: $baseline%"
+      - name: cargo llvm-cov --fail-under-lines
+        run: |
+          cargo llvm-cov --workspace --summary-only \
+            --fail-under-lines ${{ steps.baseline.outputs.baseline }}
+
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: test
+    needs: [test, lint, coverage]
     runs-on: ubuntu-latest
     container:
       image: rust:latest
