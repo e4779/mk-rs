@@ -31,9 +31,8 @@ What must hold true. What must never happen.
 - **No unsafe code.** `#![forbid(unsafe_code)]` in all four crates
   (mk-core, mk-shell lib.rs; mk-cli, mk-graph main.rs) — compile-time
   enforced, cannot be `#[allow]`'d.
-- **No daemon / watch mode.** mk is a build tool. Compose with `watchexec` /
-  `cargo watch` / shell one-liner (`while inotifywait .; do mk; done`). Plan 9
-  mk never had this. (See Decisions below for the why-not.)
+- **No daemon / watch mode.** Compose with external tools
+  (`watchexec`, `cargo watch`, shell one-liner). Why-not: Decisions §5.
 - **Library-first.** `mk-core` exposes `build(mkfile_path, opts)`. The CLI is
   a thin wrapper, not the primary interface.
 - **Plan 9 mk compatibility.** mkfiles intended for plan9port mk must work
