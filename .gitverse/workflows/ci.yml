@@ -113,10 +113,17 @@ jobs:
 
       - name: Publish to crates.io
         run: |
-          cargo publish -p mk-rs-core --allow-dirty
-          cargo publish -p mk-rs-shell --allow-dirty
-          cargo publish -p mk-rs --allow-dirty
-          cargo publish -p mk-graph --allow-dirty
+          # Idempotent: skip crates already on crates.io (e.g. on re-runs
+          # of the same tag after a downstream step failed). crates.io
+          # returns non-zero with "already exists"; we probe the API first.
+          VER=$(grep '^version' crates/mk-cli/Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          for crate in mk-rs-core mk-rs-shell mk-rs mk-graph; do
+            if curl -sf "https://crates.io/api/v1/crates/$crate/$VER" >/dev/null 2>&1; then
+              echo "$crate $VER already on crates.io — skipping"
+            else
+              cargo publish -p "$crate" --allow-dirty
+            fi
+          done
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
@@ -130,6 +137,8 @@ jobs:
           ARCHIVE: ${{ steps.pkg.outputs.archive }}
         run: |
           set -euo pipefail
+          # rust:latest lacks jq; install it for JSON parsing.
+          apt-get update -qq && apt-get install -y -qq jq >/dev/null
           OWNER=e4779
           REPO=mk-rs
           TAG="${{ github.ref_name }}"
