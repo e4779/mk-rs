@@ -890,7 +890,7 @@ dependencies = [
 
 [[package]]
 name = "mk-graph"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "ascii-dag",
  "clap",
@@ -902,7 +902,7 @@ dependencies = [
 
 [[package]]
 name = "mk-rs"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "clap",
  "mk-rs-core",
@@ -911,7 +911,7 @@ dependencies = [
 
 [[package]]
 name = "mk-rs-core"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "glob",
  "regex",
@@ -920,7 +920,7 @@ dependencies = [
 
 [[package]]
 name = "mk-rs-shell"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "duckscript",
  "duckscriptsdk",

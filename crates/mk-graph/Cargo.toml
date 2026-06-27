@@ -1,6 +1,6 @@
 [package]
 name = "mk-graph"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2021"
 description = "Graph visualization for mk-rs: ASCII, Mermaid, DOT, JSON export"
 license = "MIT"
