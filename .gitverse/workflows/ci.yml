@@ -164,7 +164,7 @@ jobs:
               "$API/releases/$REL_ID/assets/$EXISTING" || true
           fi
 
-          curl -sf -X POST -H "$AUTH" -H 'Content-Type: multipart/form-data' \
+          curl -sf -X POST -H "$AUTH" -H "$ACCEPT" \
             -F "attachment=@$ARCHIVE" \
             "$API/releases/$REL_ID/assets?name=$ARCHIVE" >/dev/null
           echo "uploaded $ARCHIVE to gitverse release $REL_ID"
