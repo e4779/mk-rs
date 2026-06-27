@@ -87,6 +87,30 @@ jobs:
           git add -f crates/mk-cli/GIT_HASH crates/mk-graph/GIT_HASH
           cargo publish --dry-run -p mk-rs-core --allow-dirty
 
+      # ── Binary release ────────────────────────────────────────────────
+      # Build a stripped release binary and pack it as
+      #   mk-<version>-x86_64-unknown-linux-gnu.tar.gz
+      # (binary name `mk` at the archive root, matching the
+      # [package.metadata.binstall] bin-dir in crates/mk-cli/Cargo.toml).
+      # Matrix is intentionally a one-liner today (Linux x86_64 covers the
+      # zola CI use case); extend TARGETS when macOS/Windows runners are
+      # available on gitverse. mk-rust is Unix-first per PLAN §Next 3.
+      - name: Build release binary (Linux x86_64)
+        run: |
+          cargo build --release -p mk-rs
+          strip target/release/mk
+          ls -lh target/release/mk
+
+      - name: Package binary
+        id: pkg
+        run: |
+          VER="${{ github.ref_name }}"   # v0.2.3
+          VER="${VER#v}"                  # 0.2.3
+          ARCHIVE="mk-${VER}-x86_64-unknown-linux-gnu.tar.gz"
+          tar -C target/release -czf "$ARCHIVE" mk
+          echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
+          echo "packed $(pwd)/$ARCHIVE ($(du -h "$ARCHIVE" | cut -f1))"
+
       - name: Publish to crates.io
         run: |
           cargo publish -p mk-rs-core --allow-dirty
@@ -95,3 +119,83 @@ jobs:
           cargo publish -p mk-graph --allow-dirty
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      # Canonical home: gitverse releases (API per gitverse Public API docs —
+      # POST /repos/{owner}/{repo}/releases/{id}/assets, multipart/form-data).
+      # Idempotent: get-or-create release by tag, delete existing same-name
+      # asset before re-upload so re-runs don't 409.
+      - name: Upload asset to gitverse release
+        env:
+          GV_API_TOKEN: ${{ secrets.GV_API_TOKEN }}
+          ARCHIVE: ${{ steps.pkg.outputs.archive }}
+        run: |
+          set -euo pipefail
+          OWNER=e4779
+          REPO=mk-rs
+          TAG="${{ github.ref_name }}"
+          API="https://api.gitverse.ru/repos/$OWNER/$REPO"
+          AUTH="Authorization: Bearer $GV_API_TOKEN"
+          ACCEPT="accept: application/vnd.gitverse.object+json;version=1"
+
+          REL=$(curl -sf -H "$AUTH" -H "$ACCEPT" "$API/releases/tags/$TAG" || true)
+          if [ -z "$REL" ]; then
+            echo "creating gitverse release for $TAG"
+            REL=$(curl -sf -X POST -H "$AUTH" -H "$ACCEPT" \
+              -H 'Content-Type: application/json' \
+              -d "{\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"draft\":false,\"prerelease\":false}" \
+              "$API/releases")
+          fi
+          REL_ID=$(echo "$REL" | jq -r .id)
+          echo "gitverse release id: $REL_ID"
+
+          EXISTING=$(echo "$REL" | jq -r ".assets[]? | select(.name==\"$ARCHIVE\") | .id" || true)
+          if [ -n "$EXISTING" ]; then
+            echo "deleting existing asset id=$EXISTING"
+            curl -sf -X DELETE -H "$AUTH" -H "$ACCEPT" \
+              "$API/releases/$REL_ID/assets/$EXISTING" || true
+          fi
+
+          curl -sf -X POST -H "$AUTH" -H 'Content-Type: multipart/form-data' \
+            -F "attachment=@$ARCHIVE" \
+            "$API/releases/$REL_ID/assets?name=$ARCHIVE" >/dev/null
+          echo "uploaded $ARCHIVE to gitverse release $REL_ID"
+
+      # Mirror: GitHub releases. cargo-binstall needs a stable URL template
+      # (gitverse's per-asset download URL embeds an opaque asset_id).
+      # GitHub's `/releases/download/<tag>/<file>` shortcut is stable, so
+      # [package.metadata.binstall].pkg-url points at the github mirror.
+      # Both remotes receive identical assets.
+      - name: Mirror asset to github release (cargo-binstall target)
+        env:
+          GH_RELEASE_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
+          ARCHIVE: ${{ steps.pkg.outputs.archive }}
+        run: |
+          set -euo pipefail
+          OWNER=e4779
+          REPO=mk-rs
+          TAG="${{ github.ref_name }}"
+          API="https://api.github.com/repos/$OWNER/$REPO"
+          AUTH="Authorization: token $GH_RELEASE_TOKEN"
+          ACCEPT="Accept: application/vnd.github+json"
+
+          REL=$(curl -sf -H "$AUTH" -H "$ACCEPT" "$API/releases/tags/$TAG" || true)
+          if [ -z "$REL" ]; then
+            echo "creating github release for $TAG"
+            REL=$(curl -sf -X POST -H "$AUTH" -H "$ACCEPT" \
+              -H 'Content-Type: application/json' \
+              -d "{\"tag_name\":\"$TAG\",\"name\":\"$TAG\",\"draft\":false,\"prerelease\":false}" \
+              "$API/releases")
+          fi
+          UPLOAD_URL=$(echo "$REL" | jq -r .upload_url | sed 's/{?name,label}//')
+
+          EXISTING=$(echo "$REL" | jq -r ".assets[]? | select(.name==\"$ARCHIVE\") | .id" || true)
+          if [ -n "$EXISTING" ]; then
+            curl -sf -X DELETE -H "$AUTH" -H "$ACCEPT" \
+              "$API/releases/assets/$EXISTING" || true
+          fi
+
+          curl -sf -X POST -H "$AUTH" \
+            -H "Content-Type: application/gzip" \
+            --data-binary "@$ARCHIVE" \
+            "$UPLOAD_URL?name=$ARCHIVE" >/dev/null
+          echo "mirrored $ARCHIVE to github release"

@@ -163,6 +163,32 @@ is NOT run locally — CI auto-publishes on `v*` tag push, see
 `.gitverse/workflows/ci.yml`. Do not bypass the pre-checks with `--no-verify`
 on release commits; if gates fail, fix them first.
 
+### Binary releases
+
+CI also builds a stripped release binary and uploads it to **both** remotes:
+
+- **gitverse releases** (canonical) — via the Public API
+  (`POST /repos/{owner}/{repo}/releases/{id}/assets`, multipart).
+- **GitHub releases** (mirror) — `cargo-binstall` target, because binstall
+  needs a stable URL template and gitverse's per-asset download URL embeds
+  an opaque `asset_id`. GitHub's `/releases/download/<tag>/<file>` shortcut
+  is stable, so `[package.metadata.binstall].pkg-url` points at the mirror.
+
+Today the matrix is Linux x86_64 only (covers the zola CI use case).
+PLAN §Next 3 has mk-rust as Unix-first; extend the matrix in
+`.gitverse/workflows/ci.yml` when macOS/Windows runners are available.
+
+**Required gitverse CI secrets** (configure once per repo under
+Settings → Secrets and variables):
+
+| Secret | Purpose |
+|---|---|
+| `CARGO_REGISTRY_TOKEN` | crates.io publish (existing) |
+| `GV_API_TOKEN` | create release + upload asset via `api.gitverse.ru` |
+| `GH_RELEASE_TOKEN` | mirror asset to GitHub release (PAT with `repo` scope) |
+
+Verify after a release: `cargo binstall -y mk-rs && mk --version`.
+
 ## Architecture orientation
 
 - `crates/mk-core/` — all build logic (lex, parse, graph, var, sched, recipe)

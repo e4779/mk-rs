@@ -24,3 +24,18 @@ path = "src/main.rs"
 
 [package.metadata.docs.rs]
 all-features = true
+
+# cargo-binstall: pull prebuilt binaries instead of compiling from source.
+# Binaries are built and uploaded by .gitverse/workflows/ci.yml on every
+# v* tag. The canonical home is gitverse releases, but cargo-binstall needs
+# a stable URL template (gitverse's per-asset download URL embeds an opaque
+# asset_id). The github mirror's `/releases/download/<tag>/<file>` shortcut
+# is stable, so binstall points there. Both remotes receive identical
+# assets in the release job.
+#
+# Verify after a release:
+#   cargo binstall -y mk-rs && mk --version
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/mk-{ version }-{ target }{ archive-suffix }"
+pkg-fmt = "tgz"
+bin-dir = "{ bin }{ binary-ext }"

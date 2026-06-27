@@ -42,7 +42,10 @@ mk-rust ports these semantics to Rust with zero unsafe code, a library-first arc
 ### Install
 
 ```bash
-# Install from crates.io
+# Prebuilt binary (fast — no compile step)
+cargo binstall -y mk-rs
+
+# Or compile from crates.io
 cargo install mk-rs
 
 # Optional: with duckscript support
